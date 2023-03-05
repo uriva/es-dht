@@ -1,19 +1,19 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
-  DHT,
-  HashedValue,
-  Item,
-  PeerId,
   checkStateProof,
   commitState,
   deletePeer,
+  DHT,
   finishLookup,
   getState,
   getStateProof,
+  HashedValue,
+  Item,
+  PeerId,
   setPeer,
   startLookup,
-  update_lookup,
+  updateLookup,
 } from "../src/index.ts";
 import {
   assert,
@@ -71,7 +71,7 @@ const handleLookup =
           target_node_id,
         );
         if (checkResult && checkResult.join(",") === target_node_id.join(",")) {
-          const x = update_lookup(
+          const x = updateLookup(
             dht.dht,
             id,
             target_node_id,
