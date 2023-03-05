@@ -89,8 +89,6 @@ export function DHT(
   state_history_size,
   fraction_of_nodes_from_same_peer,
 ) {
-  fraction_of_nodes_from_same_peer == null &&
-    (fraction_of_nodes_from_same_peer = 0.2);
   if (!(this instanceof DHT)) {
     return new DHT(
       id,

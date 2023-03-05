@@ -6,9 +6,9 @@ import test from "npm:tape@^4.9.1";
 
 const sha1 = (data) => crypto.createHash("sha1").update(data).digest();
 
-const makeSimpleDHT = (id: ReturnType<crypto.randomBytes>) => ({
+const makeSimpleDHT = (id: ReturnType<typeof crypto.randomBytes>) => ({
   id,
-  dht: DHT(id, sha1, 20, 1000),
+  dht: DHT(id, sha1, 20, 1000, 0.2),
   data: arrayMapSet.ArrayMap(),
 });
 
