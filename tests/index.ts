@@ -5,7 +5,6 @@ import arrayMapSet from "npm:array-map-set@^1.0.1";
 import test from "npm:tape@^4.9.1";
 
 const sha1 = (data) => crypto.createHash("sha1").update(data).digest();
-const instances = arrayMapSet.ArrayMap();
 
 const makeSimpleDHT = (id: ReturnType<crypto.randomBytes>) => ({
   id,
@@ -15,11 +14,11 @@ const makeSimpleDHT = (id: ReturnType<crypto.randomBytes>) => ({
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const lookup = (dht: SimpleDHT, id) => {
-  _handle_lookup(dht, id, dht.dht.start_lookup(id));
+const lookup = (send) => (dht: SimpleDHT, id) => {
+  _handleLookup(send)(dht, id, dht.dht.start_lookup(id));
   return dht.dht.finish_lookup(id);
 };
-const _handle_lookup = (dht, id, nodes_to_connect_to) => {
+const _handleLookup = (send) => (dht, id, nodes_to_connect_to) => {
   if (!nodes_to_connect_to.length) {
     return;
   }
@@ -29,15 +28,15 @@ const _handle_lookup = (dht, id, nodes_to_connect_to) => {
       nodes_to_connect_to[i];
     const target_node_state_version = dht.dht.check_state_proof(
       parent_state_version,
-      response(instances.get(parent_node_id), dht.id, "get_state_proof", [
+      send(parent_node_id, dht.id, "get_state_proof", [
         target_node_id,
         parent_state_version,
       ]),
       target_node_id,
     );
     if (target_node_state_version) {
-      const [proof, target_node_peers] = response(
-        instances.get(target_node_id),
+      const [proof, target_node_peers] = send(
+        target_node_id,
         dht.id,
         "get_state",
         target_node_state_version,
@@ -62,26 +61,26 @@ const _handle_lookup = (dht, id, nodes_to_connect_to) => {
       throw new Error();
     }
   }
-  _handle_lookup(dht, id, nodes_for_next_round);
+  _handleLookup(send)(dht, id, nodes_for_next_round);
 };
 
-const put = (dht, data) => {
+const put = (send) => (dht, data) => {
   const infohash = sha1(data);
   dht.data.set(infohash, data);
-  const ref = lookup(dht, infohash);
+  const ref = lookup(send)(dht, infohash);
   for (let i = 0; i < ref.length; ++i) {
-    response(instances.get(ref[i]), dht.id, "put", data);
+    send(ref[i], dht.id, "put", data);
   }
   return infohash;
 };
 
-const get = (dht, infohash) => {
+const get = (send) => (dht, infohash) => {
   if (dht.data.has(infohash)) {
     return dht.data.get(infohash);
   }
-  const ref = lookup(dht, infohash);
+  const ref = lookup(send)(dht, infohash);
   for (let i = 0; i < ref.length; ++i) {
-    const data = response(instances.get(ref[i]), dht.id, "get", infohash);
+    const data = send(ref[i], dht.id, "get", infohash);
     if (data) {
       return data;
     }
@@ -89,9 +88,9 @@ const get = (dht, infohash) => {
   return null;
 };
 
-const get_peers = (dht) => dht.dht.get_state()[2];
+const getPeers = (dht) => dht.dht.get_state()[2];
 
-const del_peer = (dht, peer_id) => {
+const deletePeer = (dht, peer_id) => {
   dht.dht.del_peer(peer_id);
 };
 
@@ -118,49 +117,47 @@ const response = (instance, source_id, command, data) => {
 test("es-dht", (t) => {
   t.plan(8);
   console.log("Creating instances...");
+  const instances = arrayMapSet.ArrayMap();
+
+  const send = (recipient, source_id, command, data) =>
+    response(instances.get(recipient), source_id, command, data);
+
   const nodes: ReturnType<crypto.randomBytes>[] = [];
-  const bootstrap_node_id = crypto.randomBytes(20);
-  const initial = makeSimpleDHT(bootstrap_node_id);
-  instances.set(bootstrap_node_id, initial);
+  const bootsrapNodeId = crypto.randomBytes(20);
+  const initial = makeSimpleDHT(bootsrapNodeId);
+  instances.set(bootsrapNodeId, initial);
   for (let i = 0; i < 100; ++i) {
     const id = crypto.randomBytes(20);
     nodes.push(id);
     const x = makeSimpleDHT(id);
     instances.set(id, x);
-    const state = response(
-      instances.get(bootstrap_node_id),
-      x.id,
-      "bootstrap",
-      x.dht.get_state(),
-    );
+    const state = send(bootsrapNodeId, x.id, "bootstrap", x.dht.get_state());
     x.dht.commit_state();
     if (state) {
-      const state_version = state[0];
-      const proof = state[1];
-      const peers = state[2];
-      x.dht.set_peer(bootstrap_node_id, state_version, proof, peers);
+      const [stateVersion, proof, peers] = state;
+      x.dht.set_peer(bootsrapNodeId, stateVersion, proof, peers);
     }
   }
   console.log("Warm-up...");
-  const node_a = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
-  const node_b = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
-  const node_c = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
+  const alice = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
+  const bob = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
+  const carol = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
   const data = crypto.randomBytes(10);
-  const infohash = put(node_a, data);
+  const infohash = put(send)(alice, data);
   t.ok(infohash, "put succeeded");
-  t.equal(get(node_a, infohash), data, "get on node a succeeded");
-  t.equal(get(node_b, infohash), data, "get on node b succeeded");
-  t.equal(get(node_c, infohash), data, "get on node c succeeded");
-  const lookup_nodes = lookup(node_a, crypto.randomBytes(20));
+  t.equal(get(send)(alice, infohash), data, "get on node a succeeded");
+  t.equal(get(send)(bob, infohash), data, "get on node b succeeded");
+  t.equal(get(send)(carol, infohash), data, "get on node c succeeded");
+  const lookupNodes = lookup(send)(alice, crypto.randomBytes(20));
   t.ok(
-    lookup_nodes.length >= 2 && lookup_nodes.length <= 20,
+    lookupNodes.length >= 2 && lookupNodes.length <= 20,
     "Found at most 20 nodes on random lookup, but not less than 2",
   );
-  t.ok(lookup_nodes[0] instanceof Uint8Array, "Node has correct ID type");
-  t.equal(lookup_nodes[0].length, 20, "Node has correct ID length");
+  t.ok(lookupNodes[0] instanceof Uint8Array, "Node has correct ID type");
+  t.equal(lookupNodes[0].length, 20, "Node has correct ID length");
   t.doesNotThrow(() => {
-    const peers = get_peers(node_a);
-    del_peer(node_a, peers[peers.length - 1]);
+    const peers = getPeers(alice);
+    deletePeer(alice, peers[peers.length - 1]);
   }, "Peer deletion works fine");
   instances.forEach((instance) => {
     clearInterval(instance._interval);
