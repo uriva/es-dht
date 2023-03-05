@@ -5,14 +5,14 @@ import {
   HashedValue,
   Item,
   PeerId,
-  check_state_proof,
-  commit_state,
-  del_peer,
+  checkStateProof,
+  commitState,
+  deletePeer,
   finishLookup,
-  get_state,
-  get_state_proof,
-  set_peer,
-  start_lookup,
+  getState,
+  getStateProof,
+  setPeer,
+  startLookup,
   update_lookup,
 } from "../src/index.ts";
 import {
@@ -35,10 +35,11 @@ const makeSimpleDHT = (id: PeerId) => ({
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
 const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
-  _handleLookup(send)(dht, id, start_lookup(dht.dht, id, null));
+  handleLookup(send)(dht, id, startLookup(dht.dht, id, null));
   return finishLookup(dht.dht, id);
 };
-const _handleLookup =
+
+const handleLookup =
   (send: Send) => (dht: SimpleDHT, id: PeerId, nodes_to_connect_to: Item[]) => {
     if (!nodes_to_connect_to.length) {
       return;
@@ -47,7 +48,7 @@ const _handleLookup =
     for (let i = 0; i < nodes_to_connect_to.length; ++i) {
       const [target_node_id, parent_node_id, parent_state_version] =
         nodes_to_connect_to[i];
-      const target_node_state_version = check_state_proof(
+      const target_node_state_version = checkStateProof(
         dht.dht,
         parent_state_version,
         send(parent_node_id, dht.id, "get_state_proof", [
@@ -63,7 +64,7 @@ const _handleLookup =
           "get_state",
           target_node_state_version,
         );
-        const checkResult = check_state_proof(
+        const checkResult = checkStateProof(
           dht.dht,
           target_node_state_version,
           proof,
@@ -85,7 +86,7 @@ const _handleLookup =
         throw new Error();
       }
     }
-    _handleLookup(send)(dht, id, nodes_for_next_round);
+    handleLookup(send)(dht, id, nodes_for_next_round);
   };
 
 type Send = (
@@ -129,8 +130,8 @@ const response = (
 ): any => {
   switch (command) {
     case "bootstrap":
-      return set_peer(instance.dht, source_id, data[0], data[1], data[2])
-        ? (commit_state(instance.dht), get_state(instance.dht, null))
+      return setPeer(instance.dht, source_id, data[0], data[1], data[2])
+        ? (commitState(instance.dht), getState(instance.dht, null))
         : null;
     case "get":
       return instance.data.get(data) || null;
@@ -138,14 +139,14 @@ const response = (
       instance.data.set(sha1(data), data);
       break;
     case "get_state_proof":
-      return get_state_proof(instance.dht, data[1], data[0]);
+      return getStateProof(instance.dht, data[1], data[0]);
     case "get_state": {
-      const result = get_state(instance.dht, data);
+      const result = getState(instance.dht, data);
       if (!result) throw "no state for peer";
       return result.slice(1);
     }
     case "put_state":
-      set_peer(instance.dht, source_id, data[0], data[1], data[2]);
+      setPeer(instance.dht, source_id, data[0], data[1], data[2]);
   }
 };
 
@@ -169,7 +170,7 @@ Deno.test("es-dht", () => {
     nodes.push(id);
     const x = makeSimpleDHT(id);
     instances.set(id, x);
-    const firstState = get_state(x.dht, null);
+    const firstState = getState(x.dht, null);
     if (!firstState) throw "no last state";
     const state = send(
       bootsrapNodeId,
@@ -177,10 +178,10 @@ Deno.test("es-dht", () => {
       "bootstrap",
       firstState,
     );
-    commit_state(x.dht);
+    commitState(x.dht);
     if (state) {
       const [stateVersion, proof, peers] = state;
-      set_peer(x.dht, bootsrapNodeId, stateVersion, proof, peers);
+      setPeer(x.dht, bootsrapNodeId, stateVersion, proof, peers);
     }
   }
   console.log("Warm-up...");
@@ -190,17 +191,17 @@ Deno.test("es-dht", () => {
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);
   assert(infohash, "put succeeded");
-  assertEquals(get(send)(alice, infohash), data, "get on alice succeeded");
-  assertEquals(get(send)(bob, infohash), data, "get on bob succeeded");
-  assertEquals(get(send)(carol, infohash), data, "get on carol succeeded");
+  for (const peer of [alice, bob, carol]) {
+    assertEquals(get(send)(peer, infohash), data);
+  }
   const lookupNodes = lookup(send)(alice, crypto.randomBytes(20));
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array, "Node has correct ID type");
   assertEquals(lookupNodes[0].length, 20, "Node has correct ID length");
-  const stateResult = get_state(alice.dht, null);
+  const stateResult = getState(alice.dht, null);
   if (!stateResult) throw "no last state";
   const peers = stateResult[2];
-  del_peer(alice.dht, peers[peers.length - 1]);
+  deletePeer(alice.dht, peers[peers.length - 1]);
   console.log("Peer deletion works fine");
 });

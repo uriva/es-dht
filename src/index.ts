@@ -2,7 +2,7 @@ import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
-const are_arrays_equal = (array1: Uint8Array, array2: Uint8Array): boolean => {
+const arraysEqual = (array1: Uint8Array, array2: Uint8Array): boolean => {
   if (array1 === array2) {
     return true;
   }
@@ -69,7 +69,7 @@ export type PeerId = Uint8Array;
 // [node_id, parent_peer_id, parent_peer_state_version]
 export type Item = [PeerId, PeerId, StateVersion];
 
-export const start_lookup = (
+export const startLookup = (
   dht: DHT,
   id: PeerId,
   // Number of nodes to be returned if exact match was not found, defaults to bucket size
@@ -81,7 +81,7 @@ export const start_lookup = (
   }
   const bucket = kBucketSync(id, number);
   const parents = ArrayMap();
-  const lastState = _get_state(dht, null);
+  const lastState = getStateHelper(dht, null);
   if (!lastState) throw "cannot lookup if state doesn't exist";
   const state = lastState[1];
   const already_connected = ArraySet();
@@ -204,7 +204,7 @@ export const update_lookup = (
 /**
  * @return {Array<!Uint8Array>} `[id]` if node with specified ID was connected directly, an array of closest IDs if exact node wasn't found and `null` otherwise
  */
-export const finishLookup = function (dht: DHT, id: PeerId): PeerId[] | null {
+export const finishLookup = (dht: DHT, id: PeerId): PeerId[] | null => {
   const lookup = dht.lookups.get(id);
   dht.lookups["delete"](id);
   if (!lookup) {
@@ -218,14 +218,14 @@ export const finishLookup = function (dht: DHT, id: PeerId): PeerId[] | null {
 };
 
 // Returns `false` if proof is not valid, returning `true` only means there was not errors, but peer was not necessarily added to k-bucket.
-export const set_peer = (
+export const setPeer = (
   dht: DHT,
   peer_id: PeerId,
   peer_state_version: StateVersion,
   proof: Proof,
   peer_peers: PeerId[],
 ): boolean => {
-  if (are_arrays_equal(dht.id, peer_id)) {
+  if (arraysEqual(dht.id, peer_id)) {
     return false;
   }
   const expected_number_of_items = peer_peers.length * 2 + 2;
@@ -249,7 +249,7 @@ export const set_peer = (
       const block = i;
       if (
         proof[block * proof_block_size] !== 0 ||
-        !are_arrays_equal(
+        !arraysEqual(
           proof.subarray(
             block * proof_block_size + 1,
             (block + 1) * proof_block_size,
@@ -262,26 +262,26 @@ export const set_peer = (
       last_block = dht.hash(concat(last_block, last_block));
     }
   }
-  const detected_peer_id = check_state_proof(
+  const detected_peer_id = checkStateProof(
     dht,
     peer_state_version,
     proof,
     peer_id,
   );
-  if (!detected_peer_id || !are_arrays_equal(detected_peer_id, peer_id)) {
+  if (!detected_peer_id || !arraysEqual(detected_peer_id, peer_id)) {
     return false;
   }
   if (!dht.peers["set"](peer_id)) {
     return true;
   }
-  const state = _get_state_copy(dht, null);
+  const state = getStateCopy(dht, null);
   state.set(peer_id, [peer_state_version, peer_peers]);
   insertState(dht, state);
   return true;
 };
 
-export const del_peer = (dht: DHT, peer_id: PeerId) => {
-  const state = _get_state_copy(dht, null);
+export const deletePeer = (dht: DHT, peer_id: PeerId) => {
+  const state = getStateCopy(dht, null);
   if (!state.has(peer_id)) {
     return;
   }
@@ -290,18 +290,18 @@ export const del_peer = (dht: DHT, peer_id: PeerId) => {
   insertState(dht, state);
 };
 
-export const get_state = (
+export const getState = (
   dht: DHT,
   state_version: StateVersion | null,
 ): [StateVersion, Proof, PeerId[]] | null => {
-  const result = _get_state(dht, state_version);
+  const result = getStateHelper(dht, state_version);
   if (!result) {
     return null;
   }
   const [state_version2, state] = result;
   return [
     state_version2,
-    get_state_proof(dht, state_version2, dht.id),
+    getStateProof(dht, state_version2, dht.id),
     Array.from(state.keys()),
   ];
 };
@@ -310,19 +310,19 @@ export const get_state = (
  * Commit current state into state history, needs to be called if current state was sent to any peer.
  * This allows to only store useful state versions in cache known to other peers and discard the rest.
  */
-export const commit_state = (dht: DHT) => {
+export const commitState = (dht: DHT) => {
   if (!dht.latest_state) throw "cannot commit state if it isn't there";
   const [state_version, state] = dht.latest_state;
   add(dht.state_cache, state_version, state);
 };
 
-const _get_state = (
+const getStateHelper = (
   dht: DHT,
   state_version: StateVersion | null,
 ): [StateVersion, State] | null => {
   if (
     !state_version ||
-    dht.latest_state && are_arrays_equal(state_version, dht.latest_state[0])
+    dht.latest_state && arraysEqual(state_version, dht.latest_state[0])
   ) {
     return dht.latest_state;
   } else {
@@ -331,25 +331,25 @@ const _get_state = (
   }
 };
 
-const _get_state_copy = (
+const getStateCopy = (
   dht: DHT,
   state_version: StateVersion | null,
 ): State => {
-  const temp = _get_state(dht, state_version);
+  const temp = getStateHelper(dht, state_version);
   return temp && temp[1] && ArrayMap(Array.from(temp[1]));
 };
 
 // Generate proof about peer in current state version.
-export const get_state_proof = (
+export const getStateProof = (
   dht: DHT,
   state_version: StateVersion,
   peerId: PeerId,
 ): Proof => {
-  const temp = _get_state(dht, state_version);
+  const temp = getStateHelper(dht, state_version);
   const state = temp && temp[1];
   if (
     !state ||
-    (!state.has(peerId) && !are_arrays_equal(peerId, dht.id))
+    (!state.has(peerId) && !arraysEqual(peerId, dht.id))
   ) {
     return new Uint8Array(0);
   }
@@ -360,9 +360,6 @@ export const get_state_proof = (
   );
 };
 
-/**
- * @return {!Array<!Uint8Array>}
- */
 const reduceStateToProofItems = (
   dht: DHT,
   state: State,
@@ -375,7 +372,7 @@ const reduceStateToProofItems = (
   return items;
 };
 
-export const check_state_proof = (
+export const checkStateProof = (
   { hash, id_length }: DHT,
   state_version: Uint8Array,
   proof: Uint8Array,
