@@ -2,6 +2,7 @@ import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
+type HashFunction = (data: any) => HashedValue;
 type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 type StateVersion = Uint8Array;
@@ -43,7 +44,7 @@ const get = ({ map }: StateCache, key: Uint8Array) => map.get(key);
 
 export const DHT = (
   id: PeerId,
-  hash: (data: any) => HashedValue,
+  hash: HashFunction,
   bucketSize: number,
   stateHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
@@ -54,7 +55,7 @@ export const DHT = (
   bucketSize,
   fractionOfNodesFromSamePeer,
   stateCache: makeStateCache(stateHistorySize),
-  latestState: null as [StateVersion, State] | null,
+  latestState: makeLatestState(hash, id, new Map()),
   peers: kBucketSync(id, bucketSize),
   lookups: ArrayMap(),
 });
@@ -227,7 +228,7 @@ export const setPeer = (
   if (dht.peers.set(peerId)) {
     const state = getStateCopy(dht);
     state.set(peerId, [peerStateVersion, peerPeers]);
-    insertState(dht, state);
+    dht.latestState = makeLatestState(dht.hash, dht.id, state);
   }
   return true;
 };
@@ -237,7 +238,7 @@ export const deletePeer = (dht: DHT, peerId: PeerId) => {
   if (!state.has(peerId)) return;
   dht.peers.del(peerId);
   state.delete(peerId);
-  insertState(dht, state);
+  dht.latestState = makeLatestState(dht.hash, dht.id, state);
 };
 
 export const getState = (
@@ -296,21 +297,21 @@ export const getStateProof = (
     )
     ? new Uint8Array(0)
     : merkleTreeBinary.get_proof(
-      reduceStateToProofItems(dht, state),
+      reduceStateToProofItems(dht.id, state),
       peerId,
       dht.hash,
     );
 };
 
 const reduceStateToProofItems = (
-  dht: DHT,
+  id: PeerId,
   state: State,
 ): (PeerId | StateVersion)[] => {
   const items = [];
   state.forEach(([peerStateVersion], peerId: PeerId) => {
     items.push(peerId, peerStateVersion);
   });
-  items.push(dht.id, dht.id);
+  items.push(id, id);
   return items;
 };
 
@@ -332,12 +333,14 @@ export const checkStateProof = (
     ? proof.subarray(1, idLength + 1)
     : null;
 
-const insertState = (dht: DHT, newState: State) => {
-  dht.latestState = [
-    merkleTreeBinary.get_root(
-      reduceStateToProofItems(dht, newState),
-      dht.hash,
-    ),
-    newState,
-  ];
-};
+const makeLatestState = (
+  hash: HashFunction,
+  id: PeerId,
+  newState: State,
+): [StateVersion, State] => [
+  merkleTreeBinary.get_root(
+    reduceStateToProofItems(id, newState),
+    hash,
+  ),
+  newState,
+];
