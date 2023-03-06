@@ -1,16 +1,16 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
-  checkStateProof,
-  commitState,
-  deletePeer,
   DHT,
-  finishLookup,
-  getState,
-  getStateProof,
   HashedValue,
   Item,
   PeerId,
+  checkStateProof,
+  commitState,
+  deletePeer,
+  finishLookup,
+  getState,
+  getStateProof,
   setPeer,
   startLookup,
   updateLookup,

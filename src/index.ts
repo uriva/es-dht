@@ -10,16 +10,10 @@ type DHT = ReturnType<typeof DHT>;
 export type HashedValue = any;
 
 const arraysEqual = (x: Uint8Array, y: Uint8Array): boolean => {
-  if (x === y) {
-    return true;
-  }
-  if (x.length !== y.length) {
-    return false;
-  }
+  if (x === y) return true;
+  if (x.length !== y.length) return false;
   for (let i = 0; i < x.length; ++i) {
-    if (x[i] !== y[i]) {
-      return false;
-    }
+    if (x[i] !== y[i]) return false;
   }
   return true;
 };
@@ -89,8 +83,7 @@ export const startLookup = (
     const [_, peerPeers] = value;
     alreadyConnected.add(peerId);
     bucket.set(peerId);
-    for (let i = 0; i < peerPeers.length; ++i) {
-      const peerPeerId = peerPeers[i];
+    for (const peerPeerId of peerPeers) {
       if (!parents.has(peerPeerId) && bucket.set(peerPeerId)) {
         parents.set(peerPeerId, peerId);
       }
@@ -101,52 +94,49 @@ export const startLookup = (
     if (!parentPeerState) throw "id exists but no parent";
     dht.lookups.set(id, [bucket, number, alreadyConnected]);
     return [[id, parents.get(id), parentPeerState[0]]];
-  } else {
-    bucket.del(dht.id);
-    const maxFraction = Math.max(
-      dht.fractionOfNodesFromSamePeer,
-      1 / dht.peers.count(),
-    );
-    let nodesToConnectTo: Item[] = [];
-    for (;;) {
-      const closestSoFar = bucket.closest(id, number);
-      const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
-      nodesToConnectTo = [];
-      const originatedFrom = ArrayMap();
-      let retry = false;
-      for (const closestNodeId of closestSoFar) {
-        const parentPeerId = parents.get(closestNodeId);
-        if (parentPeerId) {
-          const count = originatedFrom.get(parentPeerId) || 0;
-          originatedFrom.set(parentPeerId, count + 1);
-          if (count > maxCountAllowed) {
-            bucket.del(closestNodeId);
-            retry = true;
-          } else {
-            const parentPeerState = state.get(parentPeerId);
-            if (!parentPeerState) throw "no state for parent id";
-            nodesToConnectTo.push([
-              closestNodeId,
-              parentPeerId,
-              parentPeerState[0],
-            ]);
-          }
+  }
+  bucket.del(dht.id);
+  const maxFraction = Math.max(
+    dht.fractionOfNodesFromSamePeer,
+    1 / dht.peers.count(),
+  );
+  let nodesToConnectTo: Item[] = [];
+  for (;;) {
+    const closestSoFar = bucket.closest(id, number);
+    const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
+    nodesToConnectTo = [];
+    const originatedFrom = ArrayMap();
+    let retry = false;
+    for (const closestNodeId of closestSoFar) {
+      const parentPeerId = parents.get(closestNodeId);
+      if (parentPeerId) {
+        const count = originatedFrom.get(parentPeerId) || 0;
+        originatedFrom.set(parentPeerId, count + 1);
+        if (count > maxCountAllowed) {
+          bucket.del(closestNodeId);
+          retry = true;
         } else {
-          const count = originatedFrom.get(closestNodeId) || 0;
-          originatedFrom.set(closestNodeId, count + 1);
-          if (count > maxCountAllowed) {
-            bucket.del(closestNodeId);
-            retry = true;
-          }
+          const parentPeerState = state.get(parentPeerId);
+          if (!parentPeerState) throw "no state for parent id";
+          nodesToConnectTo.push([
+            closestNodeId,
+            parentPeerId,
+            parentPeerState[0],
+          ]);
+        }
+      } else {
+        const count = originatedFrom.get(closestNodeId) || 0;
+        originatedFrom.set(closestNodeId, count + 1);
+        if (count > maxCountAllowed) {
+          bucket.del(closestNodeId);
+          retry = true;
         }
       }
-      if (!retry) {
-        break;
-      }
     }
-    dht.lookups.set(id, [bucket, number, alreadyConnected]);
-    return nodesToConnectTo;
+    if (!retry) break;
   }
+  dht.lookups.set(id, [bucket, number, alreadyConnected]);
+  return nodesToConnectTo;
 };
 
 export const updateLookup = (
@@ -170,8 +160,7 @@ export const updateLookup = (
     return [];
   }
   const addedNodes = ArraySet();
-  for (let i = 0; i < nodePeers.length; ++i) {
-    const nodePeerId = nodePeers[i];
+  for (const nodePeerId of nodePeers) {
     if (!bucket.has(nodePeerId) && bucket.set(nodePeerId)) {
       addedNodes.add(nodePeerId);
     }
@@ -307,16 +296,16 @@ export const commitState = (dht: DHT) => {
 };
 
 const getStateHelper = (
-  dht: DHT,
+  { latestState, stateCache }: DHT,
   stateVersion: StateVersion | null,
 ): [StateVersion, State] | null => {
   if (
     !stateVersion ||
-    dht.latestState && arraysEqual(stateVersion, dht.latestState[0])
+    latestState && arraysEqual(stateVersion, latestState[0])
   ) {
-    return dht.latestState;
+    return latestState;
   } else {
-    const state = get(dht.stateCache, stateVersion);
+    const state = get(stateCache, stateVersion);
     return state && [stateVersion, state];
   }
 };
