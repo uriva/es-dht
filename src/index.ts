@@ -276,7 +276,7 @@ const getStateHelper = (
 };
 
 const getStateCopy = ({ latestState }: DHT): State =>
-  ArrayMap(Array.from(latestState));
+  ArrayMap(Array.from(latestState[1]));
 
 // Generate proof about peer in current state version.
 export const getStateProof = (

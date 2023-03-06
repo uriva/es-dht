@@ -149,16 +149,13 @@ const response = (
 };
 
 Deno.test("es-dht", () => {
-  console.log("Creating instances...");
   const instances = arrayMapSet.ArrayMap();
-
   const send = (
     recipient: PeerId,
     source_id: PeerId,
     command: string,
     data: any[],
   ) => response(instances.get(recipient), source_id, command, data);
-
   const nodes: PeerId[] = [];
   const bootsrapNodeId = crypto.randomBytes(20);
   const initial = makeSimpleDHT(bootsrapNodeId);
@@ -181,23 +178,21 @@ Deno.test("es-dht", () => {
       setPeer(x.dht, bootsrapNodeId, stateVersion, proof, peers);
     }
   }
-  console.log("Warm-up...");
   const alice = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
   const bob = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
   const carol = instances.get(nodes[Math.floor(nodes.length * Math.random())]);
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);
-  assert(infohash, "put succeeded");
+  assert(infohash);
   for (const peer of [alice, bob, carol]) {
     assertEquals(get(send)(peer, infohash), data);
   }
   const lookupNodes = lookup(send)(alice, crypto.randomBytes(20));
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
-  assertInstanceOf(lookupNodes[0], Uint8Array, "Node has correct ID type");
-  assertEquals(lookupNodes[0].length, 20, "Node has correct ID length");
+  assertInstanceOf(lookupNodes[0], Uint8Array);
+  assertEquals(lookupNodes[0].length, 20);
   const stateResult = getState(alice.dht, null);
   const peers = stateResult[2];
   deletePeer(alice.dht, peers[peers.length - 1]);
-  console.log("Peer deletion works fine");
 });
