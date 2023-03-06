@@ -64,23 +64,17 @@ export type PeerId = Uint8Array;
 export type Item = [PeerId, PeerId, StateVersion];
 
 export const startLookup = (
-  dht: DHT,
-  id: PeerId,
-  // Number of nodes to be returned if exact match was not found, defaults to bucket size
-  number: number | null,
+  { id, lookups, fractionOfNodesFromSamePeer, bucketSize, peers, latestState }:
+    DHT,
+  target: PeerId,
 ): Item[] => {
-  number = number || dht.bucketSize;
-  if (dht.peers.has(id)) {
-    return [];
-  }
-  const bucket = kBucketSync(id, number);
+  if (peers.has(target)) return [];
+  const bucket = kBucketSync(target, bucketSize);
   const parents = ArrayMap();
-  const lastState = getStateHelper(dht, null);
-  if (!lastState) throw "cannot lookup if state doesn't exist";
-  const state = lastState[1];
+  if (!latestState) throw "cannot lookup if state doesn't exist";
+  const state = latestState[1];
   const alreadyConnected = ArraySet();
-  state.forEach((value, peerId: PeerId) => {
-    const [_, peerPeers] = value;
+  state.forEach(([_, peerPeers], peerId: PeerId) => {
     alreadyConnected.add(peerId);
     bucket.set(peerId);
     for (const peerPeerId of peerPeers) {
@@ -89,20 +83,17 @@ export const startLookup = (
       }
     }
   });
-  if (bucket.has(id)) {
-    const parentPeerState = state.get(parents.get(id));
+  if (bucket.has(target)) {
+    const parentPeerState = state.get(parents.get(target));
     if (!parentPeerState) throw "id exists but no parent";
-    dht.lookups.set(id, [bucket, number, alreadyConnected]);
-    return [[id, parents.get(id), parentPeerState[0]]];
+    lookups.set(target, [bucket, bucketSize, alreadyConnected]);
+    return [[target, parents.get(target), parentPeerState[0]]];
   }
-  bucket.del(dht.id);
-  const maxFraction = Math.max(
-    dht.fractionOfNodesFromSamePeer,
-    1 / dht.peers.count(),
-  );
+  bucket.del(id);
+  const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
   let nodesToConnectTo: Item[] = [];
   for (;;) {
-    const closestSoFar = bucket.closest(id, number);
+    const closestSoFar = bucket.closest(target, bucketSize);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
     nodesToConnectTo = [];
     const originatedFrom = ArrayMap();
@@ -135,7 +126,7 @@ export const startLookup = (
     }
     if (!retry) break;
   }
-  dht.lookups.set(id, [bucket, number, alreadyConnected]);
+  lookups.set(target, [bucket, bucketSize, alreadyConnected]);
   return nodesToConnectTo;
 };
 
@@ -143,56 +134,45 @@ export const updateLookup = (
   dht: DHT,
   id: PeerId,
   nodeId: PeerId,
-  nodeStateVersion: StateVersion, // Corresponding state version for `nodeId`
-  nodePeers: PeerId[], // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
+  // Corresponding state version for `nodeId`
+  nodeStateVersion: StateVersion,
+  // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
+  nodePeers: PeerId[],
 ): Item[] => {
   const lookup = dht.lookups.get(id);
-  if (!lookup) {
-    return [];
-  }
+  if (!lookup) return [];
   const [bucket, number, alreadyConnected] = lookup;
   if (!nodePeers) {
     bucket.del(nodeId);
     return [];
   }
   alreadyConnected.add(nodeId);
-  if (dht.peers.has(id) || bucket.has(id)) {
-    return [];
-  }
+  if (dht.peers.has(id) || bucket.has(id)) return [];
   const addedNodes = ArraySet();
   for (const nodePeerId of nodePeers) {
     if (!bucket.has(nodePeerId) && bucket.set(nodePeerId)) {
       addedNodes.add(nodePeerId);
     }
   }
-  if (bucket.has(id)) {
-    return [[id, nodeId, nodeStateVersion]];
-  }
+  if (bucket.has(id)) return [[id, nodeId, nodeStateVersion]];
   bucket.del(dht.id);
   return bucket.closest(id, number).filter((peer: PeerId) =>
     addedNodes.has(peer)
-  ).map(
-    (peer: PeerId) => [
-      peer,
-      nodeId,
-      nodeStateVersion,
-    ],
-  );
+  ).map((peer: PeerId) => [
+    peer,
+    nodeId,
+    nodeStateVersion,
+  ]);
 };
 
-/**
- * @return {Array<!Uint8Array>} `[id]` if node with specified ID was connected directly, an array of closest IDs if exact node wasn't found and `null` otherwise
- */
+// Returns `[id]` if node with specified ID was connected directly,
+// an array of closest IDs if exact node wasn't found and `null` otherwise.
 export const finishLookup = (dht: DHT, id: PeerId): PeerId[] | null => {
   const lookup = dht.lookups.get(id);
   dht.lookups.delete(id);
-  if (!lookup) {
-    return null;
-  }
+  if (!lookup) return null;
   const [bucket, number, alreadyConnected] = lookup;
-  if (dht.peers.has(id) || alreadyConnected.has(id)) {
-    return [id];
-  }
+  if (dht.peers.has(id) || alreadyConnected.has(id)) return [id];
   return bucket.closest(id, number);
 };
 
@@ -204,17 +184,13 @@ export const setPeer = (
   proof: Proof,
   peerPeers: PeerId[],
 ): boolean => {
-  if (arraysEqual(dht.id, peerId)) {
-    return false;
-  }
+  if (arraysEqual(dht.id, peerId)) return false;
   const expectedNumberOfItems = peerPeers.length * 2 + 2;
   const proofBlockSize = dht.idLength + 1;
   const expectedProofHeight = Math.log2(expectedNumberOfItems);
   const proofHeight = proof.length / proofBlockSize;
   if (proofHeight !== expectedProofHeight) {
-    if (proofHeight !== Math.ceil(expectedProofHeight)) {
-      return false;
-    }
+    if (proofHeight !== Math.ceil(expectedProofHeight)) return false;
     let lastBlock = peerId;
     for (
       let i = 0,
@@ -247,23 +223,18 @@ export const setPeer = (
     proof,
     peerId,
   );
-  if (!detectedPeerId || !arraysEqual(detectedPeerId, peerId)) {
-    return false;
+  if (!detectedPeerId || !arraysEqual(detectedPeerId, peerId)) return false;
+  if (dht.peers.set(peerId)) {
+    const state = getStateCopy(dht);
+    state.set(peerId, [peerStateVersion, peerPeers]);
+    insertState(dht, state);
   }
-  if (!dht.peers.set(peerId)) {
-    return true;
-  }
-  const state = getStateCopy(dht, null);
-  state.set(peerId, [peerStateVersion, peerPeers]);
-  insertState(dht, state);
   return true;
 };
 
 export const deletePeer = (dht: DHT, peerId: PeerId) => {
-  const state = getStateCopy(dht, null);
-  if (!state.has(peerId)) {
-    return;
-  }
+  const state = getStateCopy(dht);
+  if (!state.has(peerId)) return;
   dht.peers.del(peerId);
   state.delete(peerId);
   insertState(dht, state);
@@ -273,10 +244,10 @@ export const getState = (
   dht: DHT,
   stateVersion: StateVersion | null,
 ): [StateVersion, Proof, PeerId[]] | null => {
-  const result = getStateHelper(dht, stateVersion);
-  if (!result) {
-    return null;
-  }
+  const result = stateVersion
+    ? getStateHelper(dht, stateVersion)
+    : dht.latestState;
+  if (!result) return null;
   const [stateVersion2, state] = result;
   return [
     stateVersion2,
@@ -297,25 +268,18 @@ export const commitState = (dht: DHT) => {
 
 const getStateHelper = (
   { latestState, stateCache }: DHT,
-  stateVersion: StateVersion | null,
+  stateVersion: StateVersion,
 ): [StateVersion, State] | null => {
-  if (
-    !stateVersion ||
-    latestState && arraysEqual(stateVersion, latestState[0])
-  ) {
+  if (latestState && arraysEqual(stateVersion, latestState[0])) {
     return latestState;
-  } else {
-    const state = get(stateCache, stateVersion);
-    return state && [stateVersion, state];
   }
+  const state = get(stateCache, stateVersion);
+  return state && [stateVersion, state];
 };
 
-const getStateCopy = (
-  dht: DHT,
-  stateVersion: StateVersion | null,
-): State => {
-  const temp = getStateHelper(dht, stateVersion);
-  return temp && temp[1] && ArrayMap(Array.from(temp[1]));
+const getStateCopy = ({ latestState }: DHT): State => {
+  if (!latestState) throw "no state";
+  return ArrayMap(Array.from(latestState));
 };
 
 // Generate proof about peer in current state version.
@@ -326,17 +290,16 @@ export const getStateProof = (
 ): Proof => {
   const temp = getStateHelper(dht, stateVersion);
   const state = temp && temp[1];
-  if (
-    !state ||
-    (!state.has(peerId) && !arraysEqual(peerId, dht.id))
-  ) {
-    return new Uint8Array(0);
-  }
-  return merkleTreeBinary.get_proof(
-    reduceStateToProofItems(dht, state),
-    peerId,
-    dht.hash,
-  );
+  return (
+      !state ||
+      (!state.has(peerId) && !arraysEqual(peerId, dht.id))
+    )
+    ? new Uint8Array(0)
+    : merkleTreeBinary.get_proof(
+      reduceStateToProofItems(dht, state),
+      peerId,
+      dht.hash,
+    );
 };
 
 const reduceStateToProofItems = (

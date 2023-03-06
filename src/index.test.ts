@@ -35,7 +35,7 @@ const makeSimpleDHT = (id: PeerId) => ({
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
 const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
-  handleLookup(send)(dht, id, startLookup(dht.dht, id, null));
+  handleLookup(send)(dht, id, startLookup(dht.dht, id));
   return finishLookup(dht.dht, id);
 };
 
