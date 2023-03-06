@@ -72,7 +72,6 @@ export const startLookup = (
   if (peers.has(target)) return [];
   const bucket = kBucketSync(target, bucketSize);
   const parents = ArrayMap();
-  if (!latestState) throw "cannot lookup if state doesn't exist";
   const state = latestState[1];
   const alreadyConnected = ArraySet();
   state.forEach(([_, peerPeers], peerId: PeerId) => {
@@ -244,11 +243,10 @@ export const deletePeer = (dht: DHT, peerId: PeerId) => {
 export const getState = (
   dht: DHT,
   stateVersion: StateVersion | null,
-): [StateVersion, Proof, PeerId[]] | null => {
+): [StateVersion, Proof, PeerId[]] => {
   const result = stateVersion
     ? getStateHelper(dht, stateVersion)
     : dht.latestState;
-  if (!result) return null;
   const [stateVersion2, state] = result;
   return [
     stateVersion2,
@@ -262,7 +260,6 @@ export const getState = (
  * This allows to only store useful state versions in cache known to other peers and discard the rest.
  */
 export const commitState = (dht: DHT) => {
-  if (!dht.latestState) throw "cannot commit state if it isn't there";
   const [stateVersion, state] = dht.latestState;
   add(dht.stateCache, stateVersion, state);
 };
@@ -270,7 +267,7 @@ export const commitState = (dht: DHT) => {
 const getStateHelper = (
   { latestState, stateCache }: DHT,
   stateVersion: StateVersion,
-): [StateVersion, State] | null => {
+): [StateVersion, State] => {
   if (latestState && arraysEqual(stateVersion, latestState[0])) {
     return latestState;
   }
@@ -278,10 +275,8 @@ const getStateHelper = (
   return state && [stateVersion, state];
 };
 
-const getStateCopy = ({ latestState }: DHT): State => {
-  if (!latestState) throw "no state";
-  return ArrayMap(Array.from(latestState));
-};
+const getStateCopy = ({ latestState }: DHT): State =>
+  ArrayMap(Array.from(latestState));
 
 // Generate proof about peer in current state version.
 export const getStateProof = (

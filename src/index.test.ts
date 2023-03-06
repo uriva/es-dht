@@ -141,9 +141,7 @@ const response = (
     case "get_state_proof":
       return getStateProof(instance.dht, data[1], data[0]);
     case "get_state": {
-      const result = getState(instance.dht, data);
-      if (!result) throw "no state for peer";
-      return result.slice(1);
+      return getState(instance.dht, data).slice(1);
     }
     case "put_state":
       setPeer(instance.dht, source_id, data[0], data[1], data[2]);
@@ -171,7 +169,6 @@ Deno.test("es-dht", () => {
     const x = makeSimpleDHT(id);
     instances.set(id, x);
     const firstState = getState(x.dht, null);
-    if (!firstState) throw "no last state";
     const state = send(
       bootsrapNodeId,
       x.id,
@@ -200,7 +197,6 @@ Deno.test("es-dht", () => {
   assertInstanceOf(lookupNodes[0], Uint8Array, "Node has correct ID type");
   assertEquals(lookupNodes[0].length, 20, "Node has correct ID length");
   const stateResult = getState(alice.dht, null);
-  if (!stateResult) throw "no last state";
   const peers = stateResult[2];
   deletePeer(alice.dht, peers[peers.length - 1]);
   console.log("Peer deletion works fine");
