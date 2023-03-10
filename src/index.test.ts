@@ -56,7 +56,7 @@ const handleLookup =
         targetId,
       );
       if (!targeteNodeStateVersion) throw new Error();
-      const [proof, target_node_peers] = send(
+      const [proof, targetNodePeers] = send(
         targetId,
         dht.id,
         "get_state",
@@ -75,7 +75,7 @@ const handleLookup =
             id,
             targetId,
             targeteNodeStateVersion,
-            target_node_peers,
+            targetNodePeers,
           )
         ) nodesForNextRound.push(x);
       } else {
