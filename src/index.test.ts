@@ -44,21 +44,20 @@ const handleLookup =
     if (!nodesToConnectTo.length) return;
     const nodesForNextRound: Item[] = [];
     for (
-      const [target_node_id, parent_node_id, parentStateVersion]
-        of nodesToConnectTo
+      const [targetId, parentId, parentStateVersion] of nodesToConnectTo
     ) {
       const targeteNodeStateVersion = checkStateProof(
         dht.dht,
         parentStateVersion,
-        send(parent_node_id, dht.id, "get_state_proof", [
-          target_node_id,
+        send(parentId, dht.id, "get_state_proof", [
+          targetId,
           parentStateVersion,
         ]),
-        target_node_id,
+        targetId,
       );
       if (!targeteNodeStateVersion) throw new Error();
       const [proof, target_node_peers] = send(
-        target_node_id,
+        targetId,
         dht.id,
         "get_state",
         targeteNodeStateVersion,
@@ -67,14 +66,14 @@ const handleLookup =
         dht.dht,
         targeteNodeStateVersion,
         proof,
-        target_node_id,
+        targetId,
       );
-      if (checkResult && checkResult.join(",") === target_node_id.join(",")) {
+      if (checkResult && checkResult.join(",") === targetId.join(",")) {
         for (
           const x of updateLookup(
             dht.dht,
             id,
-            target_node_id,
+            targetId,
             targeteNodeStateVersion,
             target_node_peers,
           )
