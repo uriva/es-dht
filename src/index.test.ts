@@ -42,7 +42,7 @@ const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
 const handleLookup =
   (send: Send) => (dht: SimpleDHT, id: PeerId, nodesToConnectTo: Item[]) => {
     if (!nodesToConnectTo.length) return;
-    let nodesForNextRound: Item[] = [];
+    const nodesForNextRound: Item[] = [];
     for (
       const [target_node_id, parent_node_id, parentStateVersion]
         of nodesToConnectTo
@@ -70,13 +70,15 @@ const handleLookup =
         target_node_id,
       );
       if (checkResult && checkResult.join(",") === target_node_id.join(",")) {
-        nodesForNextRound = nodesForNextRound.concat(updateLookup(
-          dht.dht,
-          id,
-          target_node_id,
-          targeteNodeStateVersion,
-          target_node_peers,
-        ));
+        for (
+          const x of updateLookup(
+            dht.dht,
+            id,
+            target_node_id,
+            targeteNodeStateVersion,
+            target_node_peers,
+          )
+        ) nodesForNextRound.push(x);
       } else {
         throw new Error();
       }
