@@ -151,6 +151,12 @@ const response = (
 const randomElement = <T>(arr: T[]): T =>
   arr[Math.floor(arr.length * Math.random())];
 
+const range = (n: number) => {
+  const result = [];
+  while (result.length != n) result.push(result.length);
+  return result;
+};
+
 Deno.test("es-dht", () => {
   const idToPeer = arrayMapSet.ArrayMap();
   const send = (
@@ -159,13 +165,10 @@ Deno.test("es-dht", () => {
     command: string,
     data: any[],
   ) => response(idToPeer.get(recipient), source_id, command, data);
-  const nodes: PeerId[] = [];
   const bootsrapPeer = crypto.randomBytes(20);
-  const initial = makeSimpleDHT(bootsrapPeer);
-  idToPeer.set(bootsrapPeer, initial);
-  for (let i = 0; i < 100; ++i) {
+  idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
+  const nodes = range(100).map(() => {
     const id = crypto.randomBytes(20);
-    nodes.push(id);
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
     const state = send(bootsrapPeer, x.id, "bootstrap", getState(x.dht, null));
@@ -174,10 +177,11 @@ Deno.test("es-dht", () => {
       const [stateVersion, proof, peers] = state;
       setPeer(x.dht, bootsrapPeer, stateVersion, proof, peers);
     }
-  }
-  const alice = idToPeer.get(randomElement(nodes));
-  const bob = idToPeer.get(randomElement(nodes));
-  const carol = idToPeer.get(randomElement(nodes));
+    return id;
+  });
+  const [alice, bob, carol] = range(3).map(() =>
+    idToPeer.get(randomElement(nodes))
+  );
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);
   assert(infohash);
