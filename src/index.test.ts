@@ -41,9 +41,7 @@ const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
 
 const handleLookup =
   (send: Send) => (dht: SimpleDHT, id: PeerId, nodes_to_connect_to: Item[]) => {
-    if (!nodes_to_connect_to.length) {
-      return;
-    }
+    if (!nodes_to_connect_to.length) return;
     let nodes_for_next_round: Item[] = [];
     for (let i = 0; i < nodes_to_connect_to.length; ++i) {
       const [target_node_id, parent_node_id, parent_state_version] =
@@ -101,23 +99,17 @@ const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
   dht.data.set(infohash, data);
   const ref = lookup(send)(dht, infohash);
   if (!ref) throw "missing info hash";
-  for (let i = 0; i < ref.length; ++i) {
-    send(ref[i], dht.id, "put", data);
-  }
+  ref.forEach((element) => send(element, dht.id, "put", data));
   return infohash;
 };
 
 const get = (send: Send) => (dht: SimpleDHT, infohash: HashedValue) => {
-  if (dht.data.has(infohash)) {
-    return dht.data.get(infohash);
-  }
+  if (dht.data.has(infohash)) return dht.data.get(infohash);
   const ref = lookup(send)(dht, infohash);
   if (!ref) throw "missing info hash";
-  for (let i = 0; i < ref.length; ++i) {
-    const data = send(ref[i], dht.id, "get", infohash);
-    if (data) {
-      return data;
-    }
+  for (const element of ref) {
+    const data = send(element, dht.id, "get", infohash);
+    if (data) return data;
   }
   return null;
 };
@@ -184,7 +176,6 @@ Deno.test("es-dht", () => {
   );
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);
-  assert(infohash);
   for (const peer of [alice, bob, carol]) {
     assertEquals(get(send)(peer, infohash), data);
   }
