@@ -40,32 +40,32 @@ const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
 };
 
 const handleLookup =
-  (send: Send) => (dht: SimpleDHT, id: PeerId, nodes_to_connect_to: Item[]) => {
-    if (!nodes_to_connect_to.length) return;
+  (send: Send) => (dht: SimpleDHT, id: PeerId, nodesToConnectTo: Item[]) => {
+    if (!nodesToConnectTo.length) return;
     let nodesForNextRound: Item[] = [];
     for (
-      const [target_node_id, parent_node_id, parent_state_version]
-        of nodes_to_connect_to
+      const [target_node_id, parent_node_id, parentStateVersion]
+        of nodesToConnectTo
     ) {
-      const target_node_state_version = checkStateProof(
+      const targeteNodeStateVersion = checkStateProof(
         dht.dht,
-        parent_state_version,
+        parentStateVersion,
         send(parent_node_id, dht.id, "get_state_proof", [
           target_node_id,
-          parent_state_version,
+          parentStateVersion,
         ]),
         target_node_id,
       );
-      if (!target_node_state_version) throw new Error();
+      if (!targeteNodeStateVersion) throw new Error();
       const [proof, target_node_peers] = send(
         target_node_id,
         dht.id,
         "get_state",
-        target_node_state_version,
+        targeteNodeStateVersion,
       );
       const checkResult = checkStateProof(
         dht.dht,
-        target_node_state_version,
+        targeteNodeStateVersion,
         proof,
         target_node_id,
       );
@@ -74,7 +74,7 @@ const handleLookup =
           dht.dht,
           id,
           target_node_id,
-          target_node_state_version,
+          targeteNodeStateVersion,
           target_node_peers,
         ));
       } else {
