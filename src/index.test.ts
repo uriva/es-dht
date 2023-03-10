@@ -160,25 +160,19 @@ Deno.test("es-dht", () => {
     data: any[],
   ) => response(idToPeer.get(recipient), source_id, command, data);
   const nodes: PeerId[] = [];
-  const bootsrapNodeId = crypto.randomBytes(20);
-  const initial = makeSimpleDHT(bootsrapNodeId);
-  idToPeer.set(bootsrapNodeId, initial);
+  const bootsrapPeer = crypto.randomBytes(20);
+  const initial = makeSimpleDHT(bootsrapPeer);
+  idToPeer.set(bootsrapPeer, initial);
   for (let i = 0; i < 100; ++i) {
     const id = crypto.randomBytes(20);
     nodes.push(id);
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
-    const firstState = getState(x.dht, null);
-    const state = send(
-      bootsrapNodeId,
-      x.id,
-      "bootstrap",
-      firstState,
-    );
+    const state = send(bootsrapPeer, x.id, "bootstrap", getState(x.dht, null));
     commitState(x.dht);
     if (state) {
       const [stateVersion, proof, peers] = state;
-      setPeer(x.dht, bootsrapNodeId, stateVersion, proof, peers);
+      setPeer(x.dht, bootsrapPeer, stateVersion, proof, peers);
     }
   }
   const alice = idToPeer.get(randomElement(nodes));
