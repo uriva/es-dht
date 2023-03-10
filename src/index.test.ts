@@ -42,10 +42,11 @@ const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
 const handleLookup =
   (send: Send) => (dht: SimpleDHT, id: PeerId, nodes_to_connect_to: Item[]) => {
     if (!nodes_to_connect_to.length) return;
-    let nodes_for_next_round: Item[] = [];
-    for (let i = 0; i < nodes_to_connect_to.length; ++i) {
-      const [target_node_id, parent_node_id, parent_state_version] =
-        nodes_to_connect_to[i];
+    let nodesForNextRound: Item[] = [];
+    for (
+      const [target_node_id, parent_node_id, parent_state_version]
+        of nodes_to_connect_to
+    ) {
       const target_node_state_version = checkStateProof(
         dht.dht,
         parent_state_version,
@@ -55,36 +56,32 @@ const handleLookup =
         ]),
         target_node_id,
       );
-      if (target_node_state_version) {
-        const [proof, target_node_peers] = send(
-          target_node_id,
-          dht.id,
-          "get_state",
-          target_node_state_version,
-        );
-        const checkResult = checkStateProof(
+      if (!target_node_state_version) throw new Error();
+      const [proof, target_node_peers] = send(
+        target_node_id,
+        dht.id,
+        "get_state",
+        target_node_state_version,
+      );
+      const checkResult = checkStateProof(
+        dht.dht,
+        target_node_state_version,
+        proof,
+        target_node_id,
+      );
+      if (checkResult && checkResult.join(",") === target_node_id.join(",")) {
+        nodesForNextRound = nodesForNextRound.concat(updateLookup(
           dht.dht,
-          target_node_state_version,
-          proof,
+          id,
           target_node_id,
-        );
-        if (checkResult && checkResult.join(",") === target_node_id.join(",")) {
-          const x = updateLookup(
-            dht.dht,
-            id,
-            target_node_id,
-            target_node_state_version,
-            target_node_peers,
-          );
-          nodes_for_next_round = nodes_for_next_round.concat(x);
-        } else {
-          throw new Error();
-        }
+          target_node_state_version,
+          target_node_peers,
+        ));
       } else {
         throw new Error();
       }
     }
-    handleLookup(send)(dht, id, nodes_for_next_round);
+    handleLookup(send)(dht, id, nodesForNextRound);
   };
 
 type Send = (
