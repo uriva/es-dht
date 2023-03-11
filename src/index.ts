@@ -196,9 +196,7 @@ export const setPeer = (
           ),
           lastBlock,
         )
-      ) {
-        return false;
-      }
+      ) return false;
       lastBlock = dht.hash(concatUint8Array(lastBlock, lastBlock));
     }
   }
