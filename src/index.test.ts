@@ -29,7 +29,6 @@ const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
 
 const makeSimpleDHT = (id: PeerId) => ({
-  id,
   dht: makeDHT(id, sha1, 20, 1000, 0.2),
   data: arrayMapSet.ArrayMap(),
 });
@@ -44,7 +43,7 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
     dht.dht.hash,
     dht.dht.id,
     parentStateVersion,
-    send(parentId, dht.id, "get_state_proof", [
+    send(parentId, dht.dht.id, "get_state_proof", [
       targetId,
       parentStateVersion,
     ]),
@@ -53,7 +52,7 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
   if (!targetStateVersion) throw new Error();
   const [proof, targetNodePeers] = send(
     targetId,
-    dht.id,
+    dht.dht.id,
     "get_state",
     targetStateVersion,
   );
@@ -102,7 +101,7 @@ const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
   dht.data.set(infoHash, data);
   lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash)).forEach((
     element,
-  ) => send(element, dht.id, "put", data));
+  ) => send(element, dht.dht.id, "put", data));
   return infoHash;
 };
 
@@ -111,7 +110,7 @@ const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
   for (
     const element of lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash))
   ) {
-    const data = send(element, dht.id, "get", infoHash);
+    const data = send(element, dht.dht.id, "get", infoHash);
     if (data) return data;
   }
   return null;
@@ -161,7 +160,7 @@ Deno.test("es-dht", () => {
     const id = crypto.randomBytes(20);
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
-    const state = send(bootsrapPeer, x.id, "bootstrap", getState(x.dht, null));
+    const state = send(bootsrapPeer, x.dht.id, "bootstrap", getState(x.dht, null));
     commitState(x.dht.stateCache, x.dht.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
