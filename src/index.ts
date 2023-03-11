@@ -242,10 +242,9 @@ export const getState = (
   { latestState, stateCache, id, hash }: DHT,
   stateVersion: StateVersion | null,
 ): [StateVersion, Proof, PeerId[]] => {
-  const result = stateVersion
+  const [stateVersion2, state] = stateVersion
     ? getStateHelper(latestState, stateCache, stateVersion)
     : latestState;
-  const [stateVersion2, state] = result;
   return [
     stateVersion2,
     getStateProof(latestState, stateCache, id, hash, stateVersion2, id),
