@@ -33,3 +33,5 @@ export const concatUint8Array = (x: Uint8Array, y: Uint8Array): Uint8Array => {
   result.set(y, x.length);
   return result;
 };
+
+export const last = <T>(arr: T[]) => arr[arr.length - 1];

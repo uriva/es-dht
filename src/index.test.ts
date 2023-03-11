@@ -21,7 +21,7 @@ import {
   assertEquals,
   assertInstanceOf,
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
-import { mapCat, randomElement, range } from "./utils.ts";
+import { last, mapCat, randomElement, range } from "./utils.ts";
 
 import arrayMapSet from "npm:array-map-set@^1.0.1";
 
@@ -176,6 +176,5 @@ Deno.test("es-dht", () => {
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  const peers = getState(alice.dht, null)[2];
-  deletePeer(alice.dht, peers[peers.length - 1]);
+  deletePeer(alice.dht, last(getState(alice.dht, null)[2]));
 });
