@@ -17,7 +17,11 @@ export const { ArrayMap, ArraySet } = arrayMapSet;
 
 const makeStateCache = (size: number) => ({ size, map: ArrayMap() });
 
-const add = ({ map, size }: StateCache, key: Uint8Array, value: State) => {
+const EFFECT_add = (
+  { map, size }: StateCache,
+  key: Uint8Array,
+  value: State,
+) => {
   if (map.has(key)) return;
   map.set(key, value);
   if (map.size > size) map.delete(map.keys().next().value);
@@ -50,7 +54,7 @@ export type PeerId = Uint8Array;
 // [nodeId, parentPeerId, parentPeerStateVersion]
 export type Item = [PeerId, PeerId, StateVersion];
 
-const bla = (
+const EFFECT_bla = (
   state: State,
   bucket: Bucket,
   maxCountAllowed: number,
@@ -75,7 +79,7 @@ const bla = (
   return null;
 };
 
-export const startLookup = (
+export const EFFECT_startLookup = (
   { id, lookups, fractionOfNodesFromSamePeer, bucketSize, peers, latestState }:
     DHT,
   target: PeerId,
@@ -106,7 +110,7 @@ export const startLookup = (
     const closestSoFar = bucket.closest(target, bucketSize);
     const originatedFrom = ArrayMap();
     const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
-      bla(
+      EFFECT_bla(
         state,
         bucket,
         Math.ceil(closestSoFar.length * maxFraction),
@@ -122,7 +126,7 @@ export const startLookup = (
   }
 };
 
-export const updateLookup = (
+export const EFFECT_updateLookup = (
   peers: Bucket,
   lookups: ReturnType<typeof ArrayMap>,
   id: PeerId,
@@ -161,7 +165,7 @@ export const updateLookup = (
 
 // Returns `[id]` if node with specified ID was connected directly,
 // an array of closest IDs if exact node wasn't found and `null` otherwise.
-export const finishLookup = (
+export const EFFECT_finishLookup = (
   lookups: ReturnType<typeof ArrayMap>,
   peers: Bucket,
   id: PeerId,
@@ -176,7 +180,7 @@ export const finishLookup = (
 
 // Returns `false` if proof is not valid and `true` when means there were no errors
 // `true` does not imply peer was necessarily added to k-bucket.
-export const setPeer = (
+export const EFFECT_setPeer = (
   { id, hash, peers, latestState }: DHT,
   peerId: PeerId,
   peerStateVersion: StateVersion,
@@ -225,7 +229,7 @@ export const setPeer = (
   return true;
 };
 
-export const deletePeer = (
+export const EFFECT_deletePeer = (
   { latestState, peers, hash, id }: DHT,
   peerId: PeerId,
 ) => {
@@ -255,11 +259,11 @@ export const getState = (
 // Needs to be called if current state was sent to any peer.
 // This allows to only store useful state versions in cache known to other peers
 // and discard the rest.
-export const commitState = (
+export const EFFECT_commitState = (
   stateCache: StateCache,
   latestState: [StateVersion, State],
 ) => {
-  add(stateCache, ...latestState);
+  EFFECT_add(stateCache, ...latestState);
 };
 
 const getStateHelper = (

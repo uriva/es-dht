@@ -4,21 +4,21 @@ import {
   ArrayMap,
   Bucket,
   DHT,
+  EFFECT_commitState,
+  EFFECT_deletePeer,
+  EFFECT_finishLookup,
+  EFFECT_setPeer,
+  EFFECT_startLookup,
+  EFFECT_updateLookup,
   HashFunction,
   HashedValue,
   Item,
   PeerId,
   StateVersion,
   checkStateProof,
-  commitState,
-  deletePeer,
-  finishLookup,
   getState,
   getStateProof,
   makeDHT,
-  setPeer,
-  startLookup,
-  updateLookup,
 } from "../src/index.ts";
 import {
   assert,
@@ -64,7 +64,7 @@ const nextNodesToConnectTo = (
   );
   const checkResult = checkStateProof(hash, targetStateVersion, proof, target);
   if (!checkResult || !uint8ArraysEqual(checkResult, target)) throw new Error();
-  return updateLookup(
+  return EFFECT_updateLookup(
     peers,
     lookups,
     id,
@@ -95,7 +95,7 @@ const lookup = (send: Send) =>
         nodesToConnectTo,
       ),
     )
-    : finishLookup(lookups, peers, infoHash);
+    : EFFECT_finishLookup(lookups, peers, infoHash);
 
 type Send = (
   recipient: PeerId,
@@ -113,7 +113,7 @@ const put = (send: Send) => (dht: DHT, data: any): HashedValue => {
     dht.peers,
     dht.lookups,
     infoHash,
-    startLookup(dht, infoHash),
+    EFFECT_startLookup(dht, infoHash),
   ).forEach((
     element,
   ) => send(element, dht.id, "put", data));
@@ -129,7 +129,7 @@ const get = (send: Send) => (dht: DHT, infoHash: HashedValue) => {
       dht.peers,
       dht.lookups,
       infoHash,
-      startLookup(dht, infoHash),
+      EFFECT_startLookup(dht, infoHash),
     )
   ) {
     const data = send(element, dht.id, "get", infoHash);
@@ -146,8 +146,8 @@ const response = (
 ): any => {
   switch (command) {
     case "bootstrap":
-      return setPeer(instance, source_id, data[0], data[1], data[2])
-        ? (commitState(instance.stateCache, instance.latestState),
+      return EFFECT_setPeer(instance, source_id, data[0], data[1], data[2])
+        ? (EFFECT_commitState(instance.stateCache, instance.latestState),
           getState(instance, null))
         : null;
     case "get":
@@ -168,7 +168,7 @@ const response = (
       return getState(instance, data).slice(1);
     }
     case "put_state":
-      setPeer(instance, source_id, data[0], data[1], data[2]);
+      EFFECT_setPeer(instance, source_id, data[0], data[1], data[2]);
   }
 };
 
@@ -188,10 +188,10 @@ Deno.test("es-dht", () => {
       "bootstrap",
       getState(x, null),
     );
-    commitState(x.stateCache, x.latestState);
+    EFFECT_commitState(x.stateCache, x.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
-      setPeer(x, bootsrapPeer, stateVersion, proof, peers);
+      EFFECT_setPeer(x, bootsrapPeer, stateVersion, proof, peers);
     }
     return id;
   });
@@ -210,11 +210,11 @@ Deno.test("es-dht", () => {
     alice.peers,
     alice.lookups,
     infoHash,
-    startLookup(alice, infoHash),
+    EFFECT_startLookup(alice, infoHash),
   );
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  deletePeer(alice, last(getState(alice, null)[2]));
+  EFFECT_deletePeer(alice, last(getState(alice, null)[2]));
 });
