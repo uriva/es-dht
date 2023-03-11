@@ -7,7 +7,7 @@ import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 type HashFunction = (data: any) => HashedValue;
 type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
-export type StateVersion = Uint8Array;
+export type StateVersion = ReturnType<typeof computeStateVersion>;
 type StateCache = ReturnType<typeof makeStateCache>;
 type DHT = ReturnType<typeof DHT>;
 export type HashedValue = any;
@@ -40,7 +40,10 @@ export const DHT = (
   bucketSize,
   fractionOfNodesFromSamePeer,
   stateCache: makeStateCache(stateHistorySize),
-  latestState: makeLatestState(hash, id, new Map()),
+  latestState: [computeStateVersion(hash, id, new Map()), new Map()] as [
+    StateVersion,
+    State,
+  ],
   peers: kBucketSync(id, bucketSize),
   lookups: ArrayMap(),
 });
@@ -65,8 +68,8 @@ const bla = (
       return null;
     }
     const parentPeerState = state.get(parentPeer);
-    if (!parentPeerState) throw "no state for parent id";
-    return [closestNode, parentPeer, parentPeerState[0]];
+    if (parentPeerState) return [closestNode, parentPeer, parentPeerState[0]];
+    throw "no state for parent id";
   }
   const count = originatedFrom.get(closestNode) || 0;
   originatedFrom.set(closestNode, count + 1);
@@ -158,13 +161,17 @@ export const updateLookup = (
 
 // Returns `[id]` if node with specified ID was connected directly,
 // an array of closest IDs if exact node wasn't found and `null` otherwise.
-export const finishLookup = (dht: DHT, id: PeerId): PeerId[] | null => {
-  const lookup = dht.lookups.get(id);
-  dht.lookups.delete(id);
+export const finishLookup = (
+  { lookups, peers }: DHT,
+  id: PeerId,
+): PeerId[] | null => {
+  const lookup = lookups.get(id);
+  lookups.delete(id);
   if (!lookup) return null;
   const [bucket, number, alreadyConnected] = lookup;
-  if (dht.peers.has(id) || alreadyConnected.has(id)) return [id];
-  return bucket.closest(id, number);
+  return (peers.has(id) || alreadyConnected.has(id))
+    ? [id]
+    : bucket.closest(id, number);
 };
 
 // Returns `false` if proof is not valid, returning `true` only means there was not errors, but peer was not necessarily added to k-bucket.
@@ -211,7 +218,7 @@ export const setPeer = (
   if (dht.peers.set(peerId)) {
     const state = getStateCopy(dht);
     state.set(peerId, [peerStateVersion, peerPeers]);
-    dht.latestState = makeLatestState(dht.hash, dht.id, state);
+    dht.latestState = [computeStateVersion(dht.hash, dht.id, state), state];
   }
   return true;
 };
@@ -221,7 +228,7 @@ export const deletePeer = (dht: DHT, peerId: PeerId) => {
   if (!state.has(peerId)) return;
   dht.peers.del(peerId);
   state.delete(peerId);
-  dht.latestState = makeLatestState(dht.hash, dht.id, state);
+  dht.latestState = [computeStateVersion(dht.hash, dht.id, state), state];
 };
 
 export const getState = (
@@ -312,14 +319,12 @@ export const checkStateProof = (
     ? proof.subarray(1, id.length + 1)
     : null;
 
-const makeLatestState = (
+const computeStateVersion = (
   hash: HashFunction,
   id: PeerId,
   newState: State,
-): [StateVersion, State] => [
+): ReturnType<typeof merkleTreeBinary.get_root> =>
   merkleTreeBinary.get_root(
     reduceStateToProofItems(id, newState),
     hash,
-  ),
-  newState,
-];
+  );
