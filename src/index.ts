@@ -17,13 +17,9 @@ const { ArrayMap, ArraySet } = arrayMapSet;
 const makeStateCache = (size: number) => ({ size, map: ArrayMap() });
 
 const add = ({ map, size }: StateCache, key: Uint8Array, value: State) => {
-  if (map.has(key)) {
-    return;
-  }
+  if (map.has(key)) return;
   map.set(key, value);
-  if (map.size > size) {
-    map.delete(map.keys().next().value);
-  }
+  if (map.size > size) map.delete(map.keys().next().value);
 };
 
 const get = ({ map }: StateCache, key: Uint8Array) => map.get(key);
