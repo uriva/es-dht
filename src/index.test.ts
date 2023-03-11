@@ -79,14 +79,14 @@ const lookup = (send: Send) =>
   dht: SimpleDHT,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
-): PeerId[] | null => {
-  if (!nodesToConnectTo.length) return finishLookup(dht.dht, infoHash);
-  return lookup(send)(
-    dht,
-    infoHash,
-    mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
-  );
-};
+): PeerId[] | null =>
+  nodesToConnectTo.length
+    ? lookup(send)(
+      dht,
+      infoHash,
+      mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
+    )
+    : finishLookup(dht.dht, infoHash);
 
 type Send = (
   recipient: PeerId,
