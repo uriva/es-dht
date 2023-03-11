@@ -279,8 +279,7 @@ export const getStateProof = (
   stateVersion: StateVersion,
   peerId: PeerId,
 ): Proof => {
-  const temp = getStateHelper(dht, stateVersion);
-  const state = temp && temp[1];
+  const state = getStateHelper(dht, stateVersion)[1];
   return (
       !state ||
       (!state.has(peerId) && !uint8ArraysEqual(peerId, dht.id))
