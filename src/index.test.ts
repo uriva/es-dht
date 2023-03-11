@@ -153,12 +153,8 @@ const response = (
 
 Deno.test("es-dht", () => {
   const idToPeer = arrayMapSet.ArrayMap();
-  const send = (
-    recipient: PeerId,
-    source_id: PeerId,
-    command: string,
-    data: any[],
-  ) => response(idToPeer.get(recipient), source_id, command, data);
+  const send = (target: PeerId, source: PeerId, command: string, data: any[]) =>
+    response(idToPeer.get(target), source, command, data);
   const bootsrapPeer = crypto.randomBytes(20);
   idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
   const nodes = range(100).map(() => {
