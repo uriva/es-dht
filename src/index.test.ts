@@ -1,6 +1,7 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
+  DHT,
   HashedValue,
   Item,
   PeerId,
@@ -35,15 +36,15 @@ const makeSimpleDHT = (id: PeerId) => ({
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
+const nextNodesToConnectTo = (send: Send, id: PeerId, dht: DHT) =>
 (
   [targetId, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
   const targetStateVersion = checkStateProof(
-    dht.dht.hash,
-    dht.dht.id,
+    dht.hash,
+    dht.id,
     parentStateVersion,
-    send(parentId, dht.dht.id, "get_state_proof", [
+    send(parentId, dht.id, "get_state_proof", [
       targetId,
       parentStateVersion,
     ]),
@@ -52,32 +53,26 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
   if (!targetStateVersion) throw new Error();
   const [proof, targetNodePeers] = send(
     targetId,
-    dht.dht.id,
+    dht.id,
     "get_state",
     targetStateVersion,
   );
   const checkResult = checkStateProof(
-    dht.dht.hash,
-    dht.dht.id,
+    dht.hash,
+    dht.id,
     targetStateVersion,
     proof,
     targetId,
   );
   if (checkResult && checkResult.join(",") === targetId.join(",")) {
-    return updateLookup(
-      dht.dht,
-      id,
-      targetId,
-      targetStateVersion,
-      targetNodePeers,
-    );
+    return updateLookup(dht, id, targetId, targetStateVersion, targetNodePeers);
   }
   throw new Error();
 };
 
 const lookup = (send: Send) =>
 (
-  dht: SimpleDHT,
+  dht: DHT,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
 ): PeerId[] =>
@@ -87,7 +82,7 @@ const lookup = (send: Send) =>
       infoHash,
       mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
     )
-    : finishLookup(dht.dht.lookups, dht.dht.peers, infoHash);
+    : finishLookup(dht.lookups, dht.peers, infoHash);
 
 type Send = (
   recipient: PeerId,
@@ -99,7 +94,7 @@ type Send = (
 const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
   const infoHash = sha1(data);
   dht.data.set(infoHash, data);
-  lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash)).forEach((
+  lookup(send)(dht.dht, infoHash, startLookup(dht.dht, infoHash)).forEach((
     element,
   ) => send(element, dht.dht.id, "put", data));
   return infoHash;
@@ -108,7 +103,11 @@ const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
 const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
   if (dht.data.has(infoHash)) return dht.data.get(infoHash);
   for (
-    const element of lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash))
+    const element of lookup(send)(
+      dht.dht,
+      infoHash,
+      startLookup(dht.dht, infoHash),
+    )
   ) {
     const data = send(element, dht.dht.id, "get", infoHash);
     if (data) return data;
@@ -160,7 +159,12 @@ Deno.test("es-dht", () => {
     const id = crypto.randomBytes(20);
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
-    const state = send(bootsrapPeer, x.dht.id, "bootstrap", getState(x.dht, null));
+    const state = send(
+      bootsrapPeer,
+      x.dht.id,
+      "bootstrap",
+      getState(x.dht, null),
+    );
     commitState(x.dht.stateCache, x.dht.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
@@ -178,7 +182,7 @@ Deno.test("es-dht", () => {
   }
   const infoHash = crypto.randomBytes(20);
   const lookupNodes = lookup(send)(
-    alice,
+    alice.dht,
     infoHash,
     startLookup(alice.dht, infoHash),
   );

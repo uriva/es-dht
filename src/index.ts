@@ -9,7 +9,7 @@ type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
 type StateCache = ReturnType<typeof makeStateCache>;
-type DHT = ReturnType<typeof makeDHT>;
+export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
 const { ArrayMap, ArraySet } = arrayMapSet;
