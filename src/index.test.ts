@@ -63,18 +63,16 @@ const nextNodesToConnectTo = (
     targetStateVersion,
   );
   const checkResult = checkStateProof(hash, targetStateVersion, proof, target);
-  if (checkResult && uint8ArraysEqual(checkResult, target)) {
-    return updateLookup(
-      peers,
-      lookups,
-      id,
-      infoHash,
-      target,
-      targetStateVersion,
-      targetNodePeers,
-    );
-  }
-  throw new Error();
+  if (!checkResult || !uint8ArraysEqual(checkResult, target)) throw new Error();
+  return updateLookup(
+    peers,
+    lookups,
+    id,
+    infoHash,
+    target,
+    targetStateVersion,
+    targetNodePeers,
+  );
 };
 
 const lookup = (send: Send) =>
