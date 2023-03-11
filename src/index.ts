@@ -161,10 +161,9 @@ export const finishLookup = (
   lookups: ReturnType<typeof ArrayMap>,
   peers: ReturnType<typeof kBucketSync>,
   id: PeerId,
-): PeerId[] | null => {
+): PeerId[] => {
   const lookup = lookups.get(id);
   lookups.delete(id);
-  if (!lookup) return null;
   const [bucket, number, alreadyConnected] = lookup;
   return (peers.has(id) || alreadyConnected.has(id))
     ? [id]

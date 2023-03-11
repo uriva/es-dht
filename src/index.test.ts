@@ -81,7 +81,7 @@ const lookup = (send: Send) =>
   dht: SimpleDHT,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
-): PeerId[] | null =>
+): PeerId[] =>
   nodesToConnectTo.length
     ? lookup(send)(
       dht,
@@ -100,17 +100,17 @@ type Send = (
 const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
   const infoHash = sha1(data);
   dht.data.set(infoHash, data);
-  const ref = lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash));
-  if (!ref) throw "missing info hash";
-  ref.forEach((element) => send(element, dht.id, "put", data));
+  lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash)).forEach((
+    element,
+  ) => send(element, dht.id, "put", data));
   return infoHash;
 };
 
 const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
   if (dht.data.has(infoHash)) return dht.data.get(infoHash);
-  const ref = lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash));
-  if (!ref) throw "missing info hash";
-  for (const element of ref) {
+  for (
+    const element of lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash))
+  ) {
     const data = send(element, dht.id, "get", infoHash);
     if (data) return data;
   }
