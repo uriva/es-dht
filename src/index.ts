@@ -1,3 +1,5 @@
+import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
+
 import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
@@ -9,22 +11,6 @@ type StateVersion = Uint8Array;
 type StateCache = ReturnType<typeof makeStateCache>;
 type DHT = ReturnType<typeof DHT>;
 export type HashedValue = any;
-
-const arraysEqual = (x: Uint8Array, y: Uint8Array): boolean => {
-  if (x === y) return true;
-  if (x.length !== y.length) return false;
-  for (let i = 0; i < x.length; ++i) {
-    if (x[i] !== y[i]) return false;
-  }
-  return true;
-};
-
-const concat = (x: Uint8Array, y: Uint8Array): Uint8Array => {
-  const result = new Uint8Array(x.length * 2);
-  result.set(x);
-  result.set(y, x.length);
-  return result;
-};
 
 const { ArrayMap, ArraySet } = arrayMapSet;
 
@@ -184,7 +170,7 @@ export const setPeer = (
   proof: Proof,
   peerPeers: PeerId[],
 ): boolean => {
-  if (arraysEqual(dht.id, peerId)) return false;
+  if (uint8ArraysEqual(dht.id, peerId)) return false;
   const expectedNumberOfItems = peerPeers.length * 2 + 2;
   const proofBlockSize = dht.idLength + 1;
   const expectedProofHeight = Math.log2(expectedNumberOfItems);
@@ -204,7 +190,7 @@ export const setPeer = (
       const block = i;
       if (
         proof[block * proofBlockSize] !== 0 ||
-        !arraysEqual(
+        !uint8ArraysEqual(
           proof.subarray(
             block * proofBlockSize + 1,
             (block + 1) * proofBlockSize,
@@ -214,7 +200,7 @@ export const setPeer = (
       ) {
         return false;
       }
-      lastBlock = dht.hash(concat(lastBlock, lastBlock));
+      lastBlock = dht.hash(concatUint8Array(lastBlock, lastBlock));
     }
   }
   const detectedPeerId = checkStateProof(
@@ -223,7 +209,9 @@ export const setPeer = (
     proof,
     peerId,
   );
-  if (!detectedPeerId || !arraysEqual(detectedPeerId, peerId)) return false;
+  if (!detectedPeerId || !uint8ArraysEqual(detectedPeerId, peerId)) {
+    return false;
+  }
   if (dht.peers.set(peerId)) {
     const state = getStateCopy(dht);
     state.set(peerId, [peerStateVersion, peerPeers]);
@@ -268,7 +256,7 @@ const getStateHelper = (
   { latestState, stateCache }: DHT,
   stateVersion: StateVersion,
 ): [StateVersion, State] => {
-  if (latestState && arraysEqual(stateVersion, latestState[0])) {
+  if (latestState && uint8ArraysEqual(stateVersion, latestState[0])) {
     return latestState;
   }
   const state = get(stateCache, stateVersion);
@@ -288,7 +276,7 @@ export const getStateProof = (
   const state = temp && temp[1];
   return (
       !state ||
-      (!state.has(peerId) && !arraysEqual(peerId, dht.id))
+      (!state.has(peerId) && !uint8ArraysEqual(peerId, dht.id))
     )
     ? new Uint8Array(0)
     : merkleTreeBinary.get_proof(

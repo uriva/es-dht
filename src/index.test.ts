@@ -20,6 +20,7 @@ import {
   assertEquals,
   assertInstanceOf,
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
+import { randomElement, range } from "./utils.ts";
 
 import arrayMapSet from "npm:array-map-set@^1.0.1";
 
@@ -136,15 +137,6 @@ const response = (
     case "put_state":
       setPeer(instance.dht, source_id, data[0], data[1], data[2]);
   }
-};
-
-const randomElement = <T>(arr: T[]): T =>
-  arr[Math.floor(arr.length * Math.random())];
-
-const range = (n: number) => {
-  const result = [];
-  while (result.length != n) result.push(result.length);
-  return result;
 };
 
 Deno.test("es-dht", () => {
