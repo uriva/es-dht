@@ -126,7 +126,8 @@ const response = (
   switch (command) {
     case "bootstrap":
       return setPeer(instance.dht, source_id, data[0], data[1], data[2])
-        ? (commitState(instance.dht), getState(instance.dht, null))
+        ? (commitState(instance.dht.stateCache, instance.dht.latestState),
+          getState(instance.dht, null))
         : null;
     case "get":
       return instance.data.get(data) || null;
@@ -165,7 +166,7 @@ Deno.test("es-dht", () => {
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
     const state = send(bootsrapPeer, x.id, "bootstrap", getState(x.dht, null));
-    commitState(x.dht);
+    commitState(x.dht.stateCache, x.dht.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
       setPeer(x.dht, bootsrapPeer, stateVersion, proof, peers);

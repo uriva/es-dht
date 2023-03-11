@@ -253,13 +253,15 @@ export const getState = (
   ];
 };
 
-/**
- * Commit current state into state history, needs to be called if current state was sent to any peer.
- * This allows to only store useful state versions in cache known to other peers and discard the rest.
- */
-export const commitState = (dht: DHT) => {
-  const [stateVersion, state] = dht.latestState;
-  add(dht.stateCache, stateVersion, state);
+// Commit current state into state history.
+// Needs to be called if current state was sent to any peer.
+// This allows to only store useful state versions in cache known to other peers
+// and discard the rest.
+export const commitState = (
+  stateCache: StateCache,
+  latestState: [StateVersion, State],
+) => {
+  add(stateCache, ...latestState);
 };
 
 const getStateHelper = (
