@@ -211,7 +211,6 @@ export const setPeer = (
   }
   const detectedPeer = checkStateProof(
     hash,
-    id,
     peerStateVersion,
     proof,
     peerId,
@@ -305,7 +304,6 @@ const reduceStateToProofItems = (
 
 export const checkStateProof = (
   hash: HashFunction,
-  id: PeerId,
   stateVersion: Uint8Array,
   proof: Uint8Array,
   nodeIdForProofWasGenerated: PeerId,
@@ -319,7 +317,7 @@ export const checkStateProof = (
         hash,
       )
     )
-    ? proof.subarray(1, id.length + 1)
+    ? proof.subarray(1, nodeIdForProofWasGenerated.length + 1)
     : null;
 
 const computeStateVersion = (

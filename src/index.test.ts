@@ -45,7 +45,6 @@ const nextNodesToConnectTo = (
 ) => {
   const targetStateVersion = checkStateProof(
     hash,
-    id,
     parentStateVersion,
     send(parentId, id, "get_state_proof", [target, parentStateVersion]),
     target,
@@ -57,13 +56,7 @@ const nextNodesToConnectTo = (
     "get_state",
     targetStateVersion,
   );
-  const checkResult = checkStateProof(
-    hash,
-    id,
-    targetStateVersion,
-    proof,
-    target,
-  );
+  const checkResult = checkStateProof(hash, targetStateVersion, proof, target);
   if (checkResult && checkResult.join(",") === target.join(",")) {
     return updateLookup(
       peers,
