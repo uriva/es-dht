@@ -36,23 +36,20 @@ const makeSimpleDHT = (id: PeerId) => ({
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const nextNodesToConnectTo = (send: Send, id: PeerId, dht: DHT) =>
+const nextNodesToConnectTo = (send: Send, infoHash: HashedValue, dht: DHT) =>
 (
-  [targetId, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
+  [target, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
   const targetStateVersion = checkStateProof(
     dht.hash,
     dht.id,
     parentStateVersion,
-    send(parentId, dht.id, "get_state_proof", [
-      targetId,
-      parentStateVersion,
-    ]),
-    targetId,
+    send(parentId, dht.id, "get_state_proof", [target, parentStateVersion]),
+    target,
   );
   if (!targetStateVersion) throw new Error();
   const [proof, targetNodePeers] = send(
-    targetId,
+    target,
     dht.id,
     "get_state",
     targetStateVersion,
@@ -62,10 +59,18 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: DHT) =>
     dht.id,
     targetStateVersion,
     proof,
-    targetId,
+    target,
   );
-  if (checkResult && checkResult.join(",") === targetId.join(",")) {
-    return updateLookup(dht, id, targetId, targetStateVersion, targetNodePeers);
+  if (checkResult && checkResult.join(",") === target.join(",")) {
+    return updateLookup(
+      dht.peers,
+      dht.lookups,
+      dht.id,
+      infoHash,
+      target,
+      targetStateVersion,
+      targetNodePeers,
+    );
   }
   throw new Error();
 };

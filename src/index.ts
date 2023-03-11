@@ -121,15 +121,17 @@ export const startLookup = (
 };
 
 export const updateLookup = (
-  dht: DHT,
-  target: PeerId,
+  peers: ReturnType<typeof kBucketSync>,
+  lookups: ReturnType<typeof ArrayMap>,
+  id: PeerId,
+  target: HashedValue,
   nodeId: PeerId,
   // Corresponding state version for `nodeId`
   nodeStateVersion: StateVersion,
   // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
   nodePeers: PeerId[],
 ): Item[] => {
-  const lookup = dht.lookups.get(target);
+  const lookup = lookups.get(target);
   if (!lookup) return [];
   const [bucket, number, alreadyConnected] = lookup;
   if (!nodePeers) {
@@ -137,7 +139,7 @@ export const updateLookup = (
     return [];
   }
   alreadyConnected.add(nodeId);
-  if (dht.peers.has(target) || bucket.has(target)) return [];
+  if (peers.has(target) || bucket.has(target)) return [];
   const addedNodes = ArraySet();
   for (const nodePeerId of nodePeers) {
     if (!bucket.has(nodePeerId) && bucket.set(nodePeerId)) {
@@ -145,7 +147,7 @@ export const updateLookup = (
     }
   }
   if (bucket.has(target)) return [[target, nodeId, nodeStateVersion]];
-  bucket.del(dht.id);
+  bucket.del(id);
   return bucket.closest(target, number).filter((peer: PeerId) =>
     addedNodes.has(peer)
   ).map((peer: PeerId) => [
