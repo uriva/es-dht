@@ -174,61 +174,68 @@ export const finishLookup = (
     : bucket.closest(id, number);
 };
 
-// Returns `false` if proof is not valid, returning `true` only means there was not errors, but peer was not necessarily added to k-bucket.
+// Returns `false` if proof is not valid and `true` when means there were no errors
+// `true` does not imply peer was necessarily added to k-bucket.
 export const setPeer = (
-  dht: DHT,
+  { id, hash, peers, latestState }: DHT,
   peerId: PeerId,
   peerStateVersion: StateVersion,
   proof: Proof,
   peerPeers: PeerId[],
 ): boolean => {
-  if (uint8ArraysEqual(dht.id, peerId)) return false;
+  if (uint8ArraysEqual(id, peerId)) return false;
   const expectedNumberOfItems = peerPeers.length * 2 + 2;
-  const proofBlockSize = dht.id.length + 1;
+  const proofBlockSize = id.length + 1;
   const expectedProofHeight = Math.log2(expectedNumberOfItems);
   const proofHeight = proof.length / proofBlockSize;
   if (proofHeight !== expectedProofHeight) {
     if (proofHeight !== Math.ceil(expectedProofHeight)) return false;
     let lastBlock = peerId;
     for (
-      let i = 0,
-        to$ = Math.ceil(
-          Math.pow(Math.log2(expectedNumberOfItems), 2) -
-            expectedNumberOfItems,
-        ) / 2;
-      i <= to$;
+      let i = 0;
+      i <= Math.ceil(
+            Math.pow(Math.log2(expectedNumberOfItems), 2) -
+              expectedNumberOfItems,
+          ) / 2;
       ++i
     ) {
-      const block = i;
       if (
-        proof[block * proofBlockSize] !== 0 ||
+        proof[i * proofBlockSize] !== 0 ||
         !uint8ArraysEqual(
-          proof.subarray(
-            block * proofBlockSize + 1,
-            (block + 1) * proofBlockSize,
-          ),
+          proof.subarray(i * proofBlockSize + 1, (i + 1) * proofBlockSize),
           lastBlock,
         )
       ) return false;
-      lastBlock = dht.hash(concatUint8Array(lastBlock, lastBlock));
+      lastBlock = hash(concatUint8Array(lastBlock, lastBlock));
     }
   }
-  const detectedPeer = checkStateProof(dht, peerStateVersion, proof, peerId);
+  const detectedPeer = checkStateProof(
+    hash,
+    id,
+    peerStateVersion,
+    proof,
+    peerId,
+  );
   if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return false;
-  if (dht.peers.set(peerId)) {
-    const state = getStateCopy(dht);
+  if (peers.set(peerId)) {
+    const state = ArrayMap(Array.from(latestState[1]));
     state.set(peerId, [peerStateVersion, peerPeers]);
-    dht.latestState = [computeStateVersion(dht.hash, dht.id, state), state];
+    latestState[0] = computeStateVersion(hash, id, state);
+    latestState[1] = state;
   }
   return true;
 };
 
-export const deletePeer = (dht: DHT, peerId: PeerId) => {
-  const state = getStateCopy(dht);
+export const deletePeer = (
+  { latestState, peers, hash, id }: DHT,
+  peerId: PeerId,
+) => {
+  const state = ArrayMap(Array.from(latestState[1]));
   if (!state.has(peerId)) return;
-  dht.peers.del(peerId);
+  peers.del(peerId);
   state.delete(peerId);
-  dht.latestState = [computeStateVersion(dht.hash, dht.id, state), state];
+  latestState[0] = computeStateVersion(hash, id, state);
+  latestState[1] = state;
 };
 
 export const getState = (
@@ -266,9 +273,6 @@ const getStateHelper = (
   return state && [stateVersion, state];
 };
 
-const getStateCopy = ({ latestState }: DHT): State =>
-  ArrayMap(Array.from(latestState[1]));
-
 // Generate proof about peer in current state version.
 export const getStateProof = (
   dht: DHT,
@@ -302,7 +306,8 @@ const reduceStateToProofItems = (
 };
 
 export const checkStateProof = (
-  { hash, id }: DHT,
+  hash: HashFunction,
+  id: PeerId,
   stateVersion: Uint8Array,
   proof: Uint8Array,
   nodeIdForProofWasGenerated: PeerId,

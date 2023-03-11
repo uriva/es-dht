@@ -41,7 +41,8 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
   [targetId, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
   const targetStateVersion = checkStateProof(
-    dht.dht,
+    dht.dht.hash,
+    dht.dht.id,
     parentStateVersion,
     send(parentId, dht.id, "get_state_proof", [
       targetId,
@@ -57,7 +58,8 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
     targetStateVersion,
   );
   const checkResult = checkStateProof(
-    dht.dht,
+    dht.dht.hash,
+    dht.dht.id,
     targetStateVersion,
     proof,
     targetId,
