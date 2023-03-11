@@ -36,7 +36,6 @@ export const DHT = (
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
   id,
-  idLength: id.length,
   hash,
   bucketSize,
   fractionOfNodesFromSamePeer,
@@ -172,7 +171,7 @@ export const setPeer = (
 ): boolean => {
   if (uint8ArraysEqual(dht.id, peerId)) return false;
   const expectedNumberOfItems = peerPeers.length * 2 + 2;
-  const proofBlockSize = dht.idLength + 1;
+  const proofBlockSize = dht.id.length + 1;
   const expectedProofHeight = Math.log2(expectedNumberOfItems);
   const proofHeight = proof.length / proofBlockSize;
   if (proofHeight !== expectedProofHeight) {
@@ -299,7 +298,7 @@ const reduceStateToProofItems = (
 };
 
 export const checkStateProof = (
-  { hash, idLength }: DHT,
+  { hash, id }: DHT,
   stateVersion: Uint8Array,
   proof: Uint8Array,
   nodeIdForProofWasGenerated: PeerId,
@@ -313,7 +312,7 @@ export const checkStateProof = (
         hash,
       )
     )
-    ? proof.subarray(1, idLength + 1)
+    ? proof.subarray(1, id.length + 1)
     : null;
 
 const makeLatestState = (
