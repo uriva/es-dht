@@ -1,7 +1,9 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
-  DHT,
+  ArrayMap,
+  Bucket,
+  HashFunction,
   HashedValue,
   Item,
   PeerId,
@@ -24,48 +26,53 @@ import {
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
 import { last, mapCat, randomElement, range } from "./utils.ts";
 
-import arrayMapSet from "npm:array-map-set@^1.0.1";
-
 const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
 
 const makeSimpleDHT = (id: PeerId) => ({
   dht: makeDHT(id, sha1, 20, 1000, 0.2),
-  data: arrayMapSet.ArrayMap(),
+  data: ArrayMap(),
 });
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const nextNodesToConnectTo = (send: Send, infoHash: HashedValue, dht: DHT) =>
+const nextNodesToConnectTo = (
+  send: Send,
+  infoHash: HashedValue,
+  id: PeerId,
+  hash: HashFunction,
+  peers: Bucket,
+  lookups: ReturnType<typeof ArrayMap>,
+) =>
 (
   [target, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
   const targetStateVersion = checkStateProof(
-    dht.hash,
-    dht.id,
+    hash,
+    id,
     parentStateVersion,
-    send(parentId, dht.id, "get_state_proof", [target, parentStateVersion]),
+    send(parentId, id, "get_state_proof", [target, parentStateVersion]),
     target,
   );
   if (!targetStateVersion) throw new Error();
   const [proof, targetNodePeers] = send(
     target,
-    dht.id,
+    id,
     "get_state",
     targetStateVersion,
   );
   const checkResult = checkStateProof(
-    dht.hash,
-    dht.id,
+    hash,
+    id,
     targetStateVersion,
     proof,
     target,
   );
   if (checkResult && checkResult.join(",") === target.join(",")) {
     return updateLookup(
-      dht.peers,
-      dht.lookups,
-      dht.id,
+      peers,
+      lookups,
+      id,
       infoHash,
       target,
       targetStateVersion,
@@ -77,17 +84,25 @@ const nextNodesToConnectTo = (send: Send, infoHash: HashedValue, dht: DHT) =>
 
 const lookup = (send: Send) =>
 (
-  dht: DHT,
+  id: PeerId,
+  hash: HashFunction,
+  peers: Bucket,
+  lookups: ReturnType<typeof ArrayMap>,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
 ): PeerId[] =>
   nodesToConnectTo.length
     ? lookup(send)(
-      dht,
+      id,
+      hash,
+      peers,
+      lookups,
       infoHash,
-      mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
+      mapCat(nextNodesToConnectTo(send, infoHash, id, hash, peers, lookups))(
+        nodesToConnectTo,
+      ),
     )
-    : finishLookup(dht.lookups, dht.peers, infoHash);
+    : finishLookup(lookups, peers, infoHash);
 
 type Send = (
   recipient: PeerId,
@@ -99,7 +114,14 @@ type Send = (
 const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
   const infoHash = sha1(data);
   dht.data.set(infoHash, data);
-  lookup(send)(dht.dht, infoHash, startLookup(dht.dht, infoHash)).forEach((
+  lookup(send)(
+    dht.dht.id,
+    dht.dht.hash,
+    dht.dht.peers,
+    dht.dht.lookups,
+    infoHash,
+    startLookup(dht.dht, infoHash),
+  ).forEach((
     element,
   ) => send(element, dht.dht.id, "put", data));
   return infoHash;
@@ -109,7 +131,10 @@ const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
   if (dht.data.has(infoHash)) return dht.data.get(infoHash);
   for (
     const element of lookup(send)(
-      dht.dht,
+      dht.dht.id,
+      dht.dht.hash,
+      dht.dht.peers,
+      dht.dht.lookups,
       infoHash,
       startLookup(dht.dht, infoHash),
     )
@@ -155,7 +180,7 @@ const response = (
 };
 
 Deno.test("es-dht", () => {
-  const idToPeer = arrayMapSet.ArrayMap();
+  const idToPeer = ArrayMap();
   const send = (target: PeerId, source: PeerId, command: string, data: any[]) =>
     response(idToPeer.get(target), source, command, data);
   const bootsrapPeer = crypto.randomBytes(20);
@@ -187,7 +212,10 @@ Deno.test("es-dht", () => {
   }
   const infoHash = crypto.randomBytes(20);
   const lookupNodes = lookup(send)(
-    alice.dht,
+    alice.dht.id,
+    alice.dht.hash,
+    alice.dht.peers,
+    alice.dht.lookups,
     infoHash,
     startLookup(alice.dht, infoHash),
   );

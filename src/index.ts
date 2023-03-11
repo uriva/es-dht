@@ -4,15 +4,16 @@ import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
-type HashFunction = (data: any) => HashedValue;
+export type Bucket = ReturnType<typeof kBucketSync>;
+export type HashFunction = (data: any) => HashedValue;
 type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
 type StateCache = ReturnType<typeof makeStateCache>;
-export type DHT = ReturnType<typeof makeDHT>;
+type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
-const { ArrayMap, ArraySet } = arrayMapSet;
+export const { ArrayMap, ArraySet } = arrayMapSet;
 
 const makeStateCache = (size: number) => ({ size, map: ArrayMap() });
 
@@ -50,7 +51,7 @@ export type Item = [PeerId, PeerId, StateVersion];
 
 const bla = (
   state: State,
-  bucket: ReturnType<typeof kBucketSync>,
+  bucket: Bucket,
   maxCountAllowed: number,
   originatedFrom: ReturnType<typeof ArrayMap>,
   closestNode: PeerId,
@@ -121,7 +122,7 @@ export const startLookup = (
 };
 
 export const updateLookup = (
-  peers: ReturnType<typeof kBucketSync>,
+  peers: Bucket,
   lookups: ReturnType<typeof ArrayMap>,
   id: PeerId,
   target: HashedValue,
@@ -161,7 +162,7 @@ export const updateLookup = (
 // an array of closest IDs if exact node wasn't found and `null` otherwise.
 export const finishLookup = (
   lookups: ReturnType<typeof ArrayMap>,
-  peers: ReturnType<typeof kBucketSync>,
+  peers: Bucket,
   id: PeerId,
 ): PeerId[] => {
   const lookup = lookups.get(id);
