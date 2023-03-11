@@ -25,7 +25,13 @@ import {
   assertEquals,
   assertInstanceOf,
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
-import { last, mapCat, randomElement, range } from "./utils.ts";
+import {
+  last,
+  mapCat,
+  randomElement,
+  range,
+  uint8ArraysEqual,
+} from "./utils.ts";
 
 const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
@@ -57,7 +63,7 @@ const nextNodesToConnectTo = (
     targetStateVersion,
   );
   const checkResult = checkStateProof(hash, targetStateVersion, proof, target);
-  if (checkResult && checkResult.join(",") === target.join(",")) {
+  if (checkResult && uint8ArraysEqual(checkResult, target)) {
     return updateLookup(
       peers,
       lookups,
