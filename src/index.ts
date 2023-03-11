@@ -239,16 +239,16 @@ export const deletePeer = (
 };
 
 export const getState = (
-  dht: DHT,
+  { latestState, stateCache, id, hash }: DHT,
   stateVersion: StateVersion | null,
 ): [StateVersion, Proof, PeerId[]] => {
   const result = stateVersion
-    ? getStateHelper(dht, stateVersion)
-    : dht.latestState;
+    ? getStateHelper(latestState, stateCache, stateVersion)
+    : latestState;
   const [stateVersion2, state] = result;
   return [
     stateVersion2,
-    getStateProof(dht, stateVersion2, dht.id),
+    getStateProof(latestState, stateCache, id, hash, stateVersion2, id),
     Array.from(state.keys()),
   ];
 };
@@ -263,10 +263,11 @@ export const commitState = (dht: DHT) => {
 };
 
 const getStateHelper = (
-  { latestState, stateCache }: DHT,
+  latestState: [StateVersion, State],
+  stateCache: StateCache,
   stateVersion: StateVersion,
 ): [StateVersion, State] => {
-  if (latestState && uint8ArraysEqual(stateVersion, latestState[0])) {
+  if (uint8ArraysEqual(stateVersion, latestState[0])) {
     return latestState;
   }
   const state = get(stateCache, stateVersion);
@@ -275,21 +276,21 @@ const getStateHelper = (
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
-  dht: DHT,
+  latestState: [StateVersion, State],
+  stateCache: StateCache,
+  id: PeerId,
+  hash: HashFunction,
   stateVersion: StateVersion,
   peerId: PeerId,
 ): Proof => {
-  const state = getStateHelper(dht, stateVersion)[1];
-  return (
-      !state ||
-      (!state.has(peerId) && !uint8ArraysEqual(peerId, dht.id))
-    )
-    ? new Uint8Array(0)
-    : merkleTreeBinary.get_proof(
-      reduceStateToProofItems(dht.id, state),
+  const [_, state] = getStateHelper(latestState, stateCache, stateVersion);
+  return (state.has(peerId) || uint8ArraysEqual(peerId, id))
+    ? merkleTreeBinary.get_proof(
+      reduceStateToProofItems(id, state),
       peerId,
-      dht.hash,
-    );
+      hash,
+    )
+    : new Uint8Array(0);
 };
 
 const reduceStateToProofItems = (

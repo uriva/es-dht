@@ -134,7 +134,14 @@ const response = (
       instance.data.set(sha1(data), data);
       break;
     case "get_state_proof":
-      return getStateProof(instance.dht, data[1], data[0]);
+      return getStateProof(
+        instance.dht.latestState,
+        instance.dht.stateCache,
+        instance.dht.id,
+        instance.dht.hash,
+        data[1],
+        data[0],
+      );
     case "get_state": {
       return getState(instance.dht, data).slice(1);
     }
