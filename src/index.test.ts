@@ -1,7 +1,6 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
-  DHT,
   HashedValue,
   Item,
   PeerId,
@@ -12,6 +11,7 @@ import {
   finishLookup,
   getState,
   getStateProof,
+  makeDHT,
   setPeer,
   startLookup,
   updateLookup,
@@ -30,7 +30,7 @@ const sha1 = (data: any): HashedValue =>
 
 const makeSimpleDHT = (id: PeerId) => ({
   id,
-  dht: DHT(id, sha1, 20, 1000, 0.2),
+  dht: makeDHT(id, sha1, 20, 1000, 0.2),
   data: arrayMapSet.ArrayMap(),
 });
 
@@ -88,7 +88,7 @@ const lookup = (send: Send) =>
       infoHash,
       mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
     )
-    : finishLookup(dht.dht, infoHash);
+    : finishLookup(dht.dht.lookups, dht.dht.peers, infoHash);
 
 type Send = (
   recipient: PeerId,

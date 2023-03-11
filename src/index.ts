@@ -9,7 +9,7 @@ type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
 type StateCache = ReturnType<typeof makeStateCache>;
-type DHT = ReturnType<typeof DHT>;
+type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
 const { ArrayMap, ArraySet } = arrayMapSet;
@@ -28,7 +28,7 @@ const add = ({ map, size }: StateCache, key: Uint8Array, value: State) => {
 
 const get = ({ map }: StateCache, key: Uint8Array) => map.get(key);
 
-export const DHT = (
+export const makeDHT = (
   id: PeerId,
   hash: HashFunction,
   bucketSize: number,
@@ -126,14 +126,14 @@ export const startLookup = (
 
 export const updateLookup = (
   dht: DHT,
-  id: PeerId,
+  target: PeerId,
   nodeId: PeerId,
   // Corresponding state version for `nodeId`
   nodeStateVersion: StateVersion,
   // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
   nodePeers: PeerId[],
 ): Item[] => {
-  const lookup = dht.lookups.get(id);
+  const lookup = dht.lookups.get(target);
   if (!lookup) return [];
   const [bucket, number, alreadyConnected] = lookup;
   if (!nodePeers) {
@@ -141,16 +141,16 @@ export const updateLookup = (
     return [];
   }
   alreadyConnected.add(nodeId);
-  if (dht.peers.has(id) || bucket.has(id)) return [];
+  if (dht.peers.has(target) || bucket.has(target)) return [];
   const addedNodes = ArraySet();
   for (const nodePeerId of nodePeers) {
     if (!bucket.has(nodePeerId) && bucket.set(nodePeerId)) {
       addedNodes.add(nodePeerId);
     }
   }
-  if (bucket.has(id)) return [[id, nodeId, nodeStateVersion]];
+  if (bucket.has(target)) return [[target, nodeId, nodeStateVersion]];
   bucket.del(dht.id);
-  return bucket.closest(id, number).filter((peer: PeerId) =>
+  return bucket.closest(target, number).filter((peer: PeerId) =>
     addedNodes.has(peer)
   ).map((peer: PeerId) => [
     peer,
@@ -162,7 +162,8 @@ export const updateLookup = (
 // Returns `[id]` if node with specified ID was connected directly,
 // an array of closest IDs if exact node wasn't found and `null` otherwise.
 export const finishLookup = (
-  { lookups, peers }: DHT,
+  lookups: ReturnType<typeof ArrayMap>,
+  peers: ReturnType<typeof kBucketSync>,
   id: PeerId,
 ): PeerId[] | null => {
   const lookup = lookups.get(id);
