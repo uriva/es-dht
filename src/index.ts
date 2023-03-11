@@ -200,15 +200,8 @@ export const setPeer = (
       lastBlock = dht.hash(concatUint8Array(lastBlock, lastBlock));
     }
   }
-  const detectedPeerId = checkStateProof(
-    dht,
-    peerStateVersion,
-    proof,
-    peerId,
-  );
-  if (!detectedPeerId || !uint8ArraysEqual(detectedPeerId, peerId)) {
-    return false;
-  }
+  const detectedPeer = checkStateProof(dht, peerStateVersion, proof, peerId);
+  if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return false;
   if (dht.peers.set(peerId)) {
     const state = getStateCopy(dht);
     state.set(peerId, [peerStateVersion, peerPeers]);
