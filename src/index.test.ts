@@ -36,9 +36,6 @@ const makeSimpleDHT = (id: PeerId) => ({
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId): PeerId[] | null =>
-  handleLookup(send)(dht, id, startLookup(dht.dht, id));
-
 const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
 (
   [targetId, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
@@ -77,16 +74,19 @@ const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
   throw new Error();
 };
 
-const handleLookup =
-  (send: Send) =>
-  (dht: SimpleDHT, id: PeerId, nodesToConnectTo: Item[]): PeerId[] | null => {
-    if (!nodesToConnectTo.length) return finishLookup(dht.dht, id);
-    return handleLookup(send)(
-      dht,
-      id,
-      mapCat(nextNodesToConnectTo(send, id, dht))(nodesToConnectTo),
-    );
-  };
+const lookup = (send: Send) =>
+(
+  dht: SimpleDHT,
+  infoHash: HashedValue,
+  nodesToConnectTo: Item[],
+): PeerId[] | null => {
+  if (!nodesToConnectTo.length) return finishLookup(dht.dht, infoHash);
+  return lookup(send)(
+    dht,
+    infoHash,
+    mapCat(nextNodesToConnectTo(send, infoHash, dht))(nodesToConnectTo),
+  );
+};
 
 type Send = (
   recipient: PeerId,
@@ -96,20 +96,20 @@ type Send = (
 ) => any;
 
 const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
-  const infohash = sha1(data);
-  dht.data.set(infohash, data);
-  const ref = lookup(send)(dht, infohash);
+  const infoHash = sha1(data);
+  dht.data.set(infoHash, data);
+  const ref = lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash));
   if (!ref) throw "missing info hash";
   ref.forEach((element) => send(element, dht.id, "put", data));
-  return infohash;
+  return infoHash;
 };
 
-const get = (send: Send) => (dht: SimpleDHT, infohash: HashedValue) => {
-  if (dht.data.has(infohash)) return dht.data.get(infohash);
-  const ref = lookup(send)(dht, infohash);
+const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
+  if (dht.data.has(infoHash)) return dht.data.get(infoHash);
+  const ref = lookup(send)(dht, infoHash, startLookup(dht.dht, infoHash));
   if (!ref) throw "missing info hash";
   for (const element of ref) {
-    const data = send(element, dht.id, "get", infohash);
+    const data = send(element, dht.id, "get", infoHash);
     if (data) return data;
   }
   return null;
@@ -171,7 +171,12 @@ Deno.test("es-dht", () => {
   for (const peer of [alice, bob, carol]) {
     assertEquals(get(send)(peer, infohash), data);
   }
-  const lookupNodes = lookup(send)(alice, crypto.randomBytes(20));
+  const infoHash = crypto.randomBytes(20);
+  const lookupNodes = lookup(send)(
+    alice,
+    infoHash,
+    startLookup(alice.dht, infoHash),
+  );
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
