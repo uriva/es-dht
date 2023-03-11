@@ -49,6 +49,31 @@ export type PeerId = Uint8Array;
 // [nodeId, parentPeerId, parentPeerStateVersion]
 export type Item = [PeerId, PeerId, StateVersion];
 
+const bla = (
+  state: State,
+  bucket: ReturnType<typeof kBucketSync>,
+  maxCountAllowed: number,
+  originatedFrom: ReturnType<typeof ArrayMap>,
+  closestNode: PeerId,
+  parentPeer: PeerId,
+): Item | null => {
+  if (parentPeer) {
+    const count = originatedFrom.get(parentPeer) || 0;
+    originatedFrom.set(parentPeer, count + 1);
+    if (count > maxCountAllowed) {
+      bucket.del(closestNode);
+      return null;
+    }
+    const parentPeerState = state.get(parentPeer);
+    if (!parentPeerState) throw "no state for parent id";
+    return [closestNode, parentPeer, parentPeerState[0]];
+  }
+  const count = originatedFrom.get(closestNode) || 0;
+  originatedFrom.set(closestNode, count + 1);
+  if (count > maxCountAllowed) bucket.del(closestNode);
+  return null;
+};
+
 export const startLookup = (
   { id, lookups, fractionOfNodesFromSamePeer, bucketSize, peers, latestState }:
     DHT,
@@ -57,7 +82,7 @@ export const startLookup = (
   if (peers.has(target)) return [];
   const bucket = kBucketSync(target, bucketSize);
   const parents = ArrayMap();
-  const state = latestState[1];
+  const [_, state] = latestState;
   const alreadyConnected = ArraySet();
   state.forEach(([_, peerPeers], peerId: PeerId) => {
     alreadyConnected.add(peerId);
@@ -76,43 +101,24 @@ export const startLookup = (
   }
   bucket.del(id);
   const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
-  let nodesToConnectTo: Item[] = [];
-  for (;;) {
+  while (true) {
     const closestSoFar = bucket.closest(target, bucketSize);
-    const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
-    nodesToConnectTo = [];
     const originatedFrom = ArrayMap();
-    let retry = false;
-    for (const closestNodeId of closestSoFar) {
-      const parentPeerId = parents.get(closestNodeId);
-      if (parentPeerId) {
-        const count = originatedFrom.get(parentPeerId) || 0;
-        originatedFrom.set(parentPeerId, count + 1);
-        if (count > maxCountAllowed) {
-          bucket.del(closestNodeId);
-          retry = true;
-        } else {
-          const parentPeerState = state.get(parentPeerId);
-          if (!parentPeerState) throw "no state for parent id";
-          nodesToConnectTo.push([
-            closestNodeId,
-            parentPeerId,
-            parentPeerState[0],
-          ]);
-        }
-      } else {
-        const count = originatedFrom.get(closestNodeId) || 0;
-        originatedFrom.set(closestNodeId, count + 1);
-        if (count > maxCountAllowed) {
-          bucket.del(closestNodeId);
-          retry = true;
-        }
-      }
+    const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
+      bla(
+        state,
+        bucket,
+        Math.ceil(closestSoFar.length * maxFraction),
+        originatedFrom,
+        closestNodeId,
+        parents.get(closestNodeId),
+      )
+    ).filter((x: Item | null) => x);
+    if (nodesToConnectTo.length) {
+      lookups.set(target, [bucket, bucketSize, alreadyConnected]);
+      return nodesToConnectTo;
     }
-    if (!retry) break;
   }
-  lookups.set(target, [bucket, bucketSize, alreadyConnected]);
-  return nodesToConnectTo;
 };
 
 export const updateLookup = (
