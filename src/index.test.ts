@@ -147,7 +147,11 @@ const response = (
   switch (command) {
     case "bootstrap":
       return EFFECT_setPeer(instance, source_id, data[0], data[1], data[2])
-        ? (EFFECT_commitState(instance.stateCache, instance.latestState),
+        ? (EFFECT_commitState(
+          instance.cacheHistorySize,
+          instance.stateCache,
+          instance.latestState,
+        ),
           getState(instance, null))
         : null;
     case "get":
@@ -188,7 +192,7 @@ Deno.test("es-dht", () => {
       "bootstrap",
       getState(x, null),
     );
-    EFFECT_commitState(x.stateCache, x.latestState);
+    EFFECT_commitState(x.cacheHistorySize, x.stateCache, x.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
       EFFECT_setPeer(x, bootsrapPeer, stateVersion, proof, peers);

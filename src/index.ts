@@ -9,31 +9,16 @@ export type HashFunction = (data: any) => HashedValue;
 type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
-type StateCache = ReturnType<typeof makeStateCache>;
 export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
-
+type StateCache = ReturnType<typeof ArrayMap>;
 export const { ArrayMap, ArraySet } = arrayMapSet;
-
-const makeStateCache = (size: number) => ({ size, map: ArrayMap() });
-
-const EFFECT_add = (
-  { map, size }: StateCache,
-  key: StateVersion,
-  value: State,
-) => {
-  if (map.has(key)) return;
-  map.set(key, value);
-  if (map.size > size) map.delete(map.keys().next().value);
-};
-
-const get = ({ map }: StateCache, key: StateVersion) => map.get(key);
 
 export const makeDHT = (
   id: PeerId,
   hash: HashFunction,
   bucketSize: number,
-  stateHistorySize: number, // How many versions of local history will be kept
+  cacheHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
   data: ArrayMap(),
@@ -41,7 +26,8 @@ export const makeDHT = (
   hash,
   bucketSize,
   fractionOfNodesFromSamePeer,
-  stateCache: makeStateCache(stateHistorySize),
+  cacheHistorySize,
+  stateCache: ArrayMap(),
   latestState: [computeStateVersion(hash, id, new Map()), new Map()] as [
     StateVersion,
     State,
@@ -260,10 +246,14 @@ export const getState = (
 // This allows to only store useful state versions in cache known to other peers
 // and discard the rest.
 export const EFFECT_commitState = (
+  size: number,
   stateCache: StateCache,
   latestState: [StateVersion, State],
 ) => {
-  EFFECT_add(stateCache, ...latestState);
+  const [key, value] = latestState;
+  if (stateCache.has(key)) return;
+  stateCache.set(key, value);
+  if (stateCache.size > size) stateCache.delete(stateCache.keys().next().value);
 };
 
 const getStateHelper = (
@@ -273,7 +263,7 @@ const getStateHelper = (
 ): [StateVersion, State] =>
   (uint8ArraysEqual(stateVersion, latestState[0]))
     ? latestState
-    : [stateVersion, get(stateCache, stateVersion)];
+    : [stateVersion, stateCache.get(stateVersion)];
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
