@@ -268,13 +268,10 @@ const getStateHelper = (
   latestState: [StateVersion, State],
   stateCache: StateCache,
   stateVersion: StateVersion,
-): [StateVersion, State] => {
-  if (uint8ArraysEqual(stateVersion, latestState[0])) {
-    return latestState;
-  }
-  const state = get(stateCache, stateVersion);
-  return state && [stateVersion, state];
-};
+): [StateVersion, State] =>
+  (uint8ArraysEqual(stateVersion, latestState[0]))
+    ? latestState
+    : [stateVersion, get(stateCache, stateVersion)];
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
