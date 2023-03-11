@@ -7,7 +7,7 @@ import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 type HashFunction = (data: any) => HashedValue;
 type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
-type StateVersion = Uint8Array;
+export type StateVersion = Uint8Array;
 type StateCache = ReturnType<typeof makeStateCache>;
 type DHT = ReturnType<typeof DHT>;
 export type HashedValue = any;

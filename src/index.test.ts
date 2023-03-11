@@ -5,6 +5,7 @@ import {
   HashedValue,
   Item,
   PeerId,
+  StateVersion,
   checkStateProof,
   commitState,
   deletePeer,
@@ -20,7 +21,7 @@ import {
   assertEquals,
   assertInstanceOf,
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
-import { randomElement, range } from "./utils.ts";
+import { mapCat, randomElement, range } from "./utils.ts";
 
 import arrayMapSet from "npm:array-map-set@^1.0.1";
 
@@ -35,55 +36,56 @@ const makeSimpleDHT = (id: PeerId) => ({
 
 type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
 
-const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId) => {
+const lookup = (send: Send) => (dht: SimpleDHT, id: PeerId): PeerId[] | null =>
   handleLookup(send)(dht, id, startLookup(dht.dht, id));
-  return finishLookup(dht.dht, id);
+
+const nextNodesToConnectTo = (send: Send, id: PeerId, dht: SimpleDHT) =>
+(
+  [targetId, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
+) => {
+  const targetStateVersion = checkStateProof(
+    dht.dht,
+    parentStateVersion,
+    send(parentId, dht.id, "get_state_proof", [
+      targetId,
+      parentStateVersion,
+    ]),
+    targetId,
+  );
+  if (!targetStateVersion) throw new Error();
+  const [proof, targetNodePeers] = send(
+    targetId,
+    dht.id,
+    "get_state",
+    targetStateVersion,
+  );
+  const checkResult = checkStateProof(
+    dht.dht,
+    targetStateVersion,
+    proof,
+    targetId,
+  );
+  if (checkResult && checkResult.join(",") === targetId.join(",")) {
+    return updateLookup(
+      dht.dht,
+      id,
+      targetId,
+      targetStateVersion,
+      targetNodePeers,
+    );
+  }
+  throw new Error();
 };
 
 const handleLookup =
-  (send: Send) => (dht: SimpleDHT, id: PeerId, nodesToConnectTo: Item[]) => {
-    if (!nodesToConnectTo.length) return;
-    const nodesForNextRound: Item[] = [];
-    for (
-      const [targetId, parentId, parentStateVersion] of nodesToConnectTo
-    ) {
-      const targeteNodeStateVersion = checkStateProof(
-        dht.dht,
-        parentStateVersion,
-        send(parentId, dht.id, "get_state_proof", [
-          targetId,
-          parentStateVersion,
-        ]),
-        targetId,
-      );
-      if (!targeteNodeStateVersion) throw new Error();
-      const [proof, targetNodePeers] = send(
-        targetId,
-        dht.id,
-        "get_state",
-        targeteNodeStateVersion,
-      );
-      const checkResult = checkStateProof(
-        dht.dht,
-        targeteNodeStateVersion,
-        proof,
-        targetId,
-      );
-      if (checkResult && checkResult.join(",") === targetId.join(",")) {
-        for (
-          const x of updateLookup(
-            dht.dht,
-            id,
-            targetId,
-            targeteNodeStateVersion,
-            targetNodePeers,
-          )
-        ) nodesForNextRound.push(x);
-      } else {
-        throw new Error();
-      }
-    }
-    handleLookup(send)(dht, id, nodesForNextRound);
+  (send: Send) =>
+  (dht: SimpleDHT, id: PeerId, nodesToConnectTo: Item[]): PeerId[] | null => {
+    if (!nodesToConnectTo.length) return finishLookup(dht.dht, id);
+    return handleLookup(send)(
+      dht,
+      id,
+      mapCat(nextNodesToConnectTo(send, id, dht))(nodesToConnectTo),
+    );
   };
 
 type Send = (
@@ -174,7 +176,6 @@ Deno.test("es-dht", () => {
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  const stateResult = getState(alice.dht, null);
-  const peers = stateResult[2];
+  const peers = getState(alice.dht, null)[2];
   deletePeer(alice.dht, peers[peers.length - 1]);
 });
