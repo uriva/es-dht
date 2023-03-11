@@ -19,7 +19,7 @@ const makeStateCache = (size: number) => ({ size, map: ArrayMap() });
 
 const EFFECT_add = (
   { map, size }: StateCache,
-  key: Uint8Array,
+  key: StateVersion,
   value: State,
 ) => {
   if (map.has(key)) return;
@@ -27,7 +27,7 @@ const EFFECT_add = (
   if (map.size > size) map.delete(map.keys().next().value);
 };
 
-const get = ({ map }: StateCache, key: Uint8Array) => map.get(key);
+const get = ({ map }: StateCache, key: StateVersion) => map.get(key);
 
 export const makeDHT = (
   id: PeerId,
