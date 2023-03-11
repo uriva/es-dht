@@ -3,6 +3,7 @@ import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 import {
   ArrayMap,
   Bucket,
+  DHT,
   HashFunction,
   HashedValue,
   Item,
@@ -29,12 +30,7 @@ import { last, mapCat, randomElement, range } from "./utils.ts";
 const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
 
-const makeSimpleDHT = (id: PeerId) => ({
-  dht: makeDHT(id, sha1, 20, 1000, 0.2),
-  data: ArrayMap(),
-});
-
-type SimpleDHT = ReturnType<typeof makeSimpleDHT>;
+const makeSimpleDHT = (id: PeerId) => makeDHT(id, sha1, 20, 1000, 0.2);
 
 const nextNodesToConnectTo = (
   send: Send,
@@ -111,51 +107,51 @@ type Send = (
   args: any,
 ) => any;
 
-const put = (send: Send) => (dht: SimpleDHT, data: any): HashedValue => {
+const put = (send: Send) => (dht: DHT, data: any): HashedValue => {
   const infoHash = sha1(data);
   dht.data.set(infoHash, data);
   lookup(send)(
-    dht.dht.id,
-    dht.dht.hash,
-    dht.dht.peers,
-    dht.dht.lookups,
+    dht.id,
+    dht.hash,
+    dht.peers,
+    dht.lookups,
     infoHash,
-    startLookup(dht.dht, infoHash),
+    startLookup(dht, infoHash),
   ).forEach((
     element,
-  ) => send(element, dht.dht.id, "put", data));
+  ) => send(element, dht.id, "put", data));
   return infoHash;
 };
 
-const get = (send: Send) => (dht: SimpleDHT, infoHash: HashedValue) => {
+const get = (send: Send) => (dht: DHT, infoHash: HashedValue) => {
   if (dht.data.has(infoHash)) return dht.data.get(infoHash);
   for (
     const element of lookup(send)(
-      dht.dht.id,
-      dht.dht.hash,
-      dht.dht.peers,
-      dht.dht.lookups,
+      dht.id,
+      dht.hash,
+      dht.peers,
+      dht.lookups,
       infoHash,
-      startLookup(dht.dht, infoHash),
+      startLookup(dht, infoHash),
     )
   ) {
-    const data = send(element, dht.dht.id, "get", infoHash);
+    const data = send(element, dht.id, "get", infoHash);
     if (data) return data;
   }
   return null;
 };
 
 const response = (
-  instance: SimpleDHT,
+  instance: DHT,
   source_id: PeerId,
   command: string,
   data: any,
 ): any => {
   switch (command) {
     case "bootstrap":
-      return setPeer(instance.dht, source_id, data[0], data[1], data[2])
-        ? (commitState(instance.dht.stateCache, instance.dht.latestState),
-          getState(instance.dht, null))
+      return setPeer(instance, source_id, data[0], data[1], data[2])
+        ? (commitState(instance.stateCache, instance.latestState),
+          getState(instance, null))
         : null;
     case "get":
       return instance.data.get(data) || null;
@@ -164,18 +160,18 @@ const response = (
       break;
     case "get_state_proof":
       return getStateProof(
-        instance.dht.latestState,
-        instance.dht.stateCache,
-        instance.dht.id,
-        instance.dht.hash,
+        instance.latestState,
+        instance.stateCache,
+        instance.id,
+        instance.hash,
         data[1],
         data[0],
       );
     case "get_state": {
-      return getState(instance.dht, data).slice(1);
+      return getState(instance, data).slice(1);
     }
     case "put_state":
-      setPeer(instance.dht, source_id, data[0], data[1], data[2]);
+      setPeer(instance, source_id, data[0], data[1], data[2]);
   }
 };
 
@@ -191,14 +187,14 @@ Deno.test("es-dht", () => {
     idToPeer.set(id, x);
     const state = send(
       bootsrapPeer,
-      x.dht.id,
+      x.id,
       "bootstrap",
-      getState(x.dht, null),
+      getState(x, null),
     );
-    commitState(x.dht.stateCache, x.dht.latestState);
+    commitState(x.stateCache, x.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
-      setPeer(x.dht, bootsrapPeer, stateVersion, proof, peers);
+      setPeer(x, bootsrapPeer, stateVersion, proof, peers);
     }
     return id;
   });
@@ -212,16 +208,16 @@ Deno.test("es-dht", () => {
   }
   const infoHash = crypto.randomBytes(20);
   const lookupNodes = lookup(send)(
-    alice.dht.id,
-    alice.dht.hash,
-    alice.dht.peers,
-    alice.dht.lookups,
+    alice.id,
+    alice.hash,
+    alice.peers,
+    alice.lookups,
     infoHash,
-    startLookup(alice.dht, infoHash),
+    startLookup(alice, infoHash),
   );
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  deletePeer(alice.dht, last(getState(alice.dht, null)[2]));
+  deletePeer(alice, last(getState(alice, null)[2]));
 });

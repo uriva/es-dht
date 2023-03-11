@@ -10,7 +10,7 @@ type State = Map<PeerId, [StateVersion, PeerId[]]>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
 type StateCache = ReturnType<typeof makeStateCache>;
-type DHT = ReturnType<typeof makeDHT>;
+export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
 export const { ArrayMap, ArraySet } = arrayMapSet;
@@ -32,6 +32,7 @@ export const makeDHT = (
   stateHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
+  data: ArrayMap(),
   id,
   hash,
   bucketSize,
