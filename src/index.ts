@@ -1,8 +1,30 @@
+import { Map as ImmutableMap, Set as ImmutableSet } from "npm:immutable";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
 import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
+
+const arrayToKey = (arr: Uint8Array) => arr.join(",");
+type ArrayMap<V> = ImmutableMap<string, V>;
+
+const mapGetArrayImmutable = <V>(
+  map: ArrayMap<V>,
+  key: Uint8Array,
+): V | undefined => map.get(arrayToKey(key));
+
+const mapSetArrayImmutable = <V>(
+  map: ArrayMap<V>,
+  key: Uint8Array,
+  value: V,
+): ArrayMap<V> => map.set(arrayToKey(key), value);
+
+type ArraySet = ImmutableSet<string>;
+
+const setHasArrayImmutable = (set: ArraySet, arr: Uint8Array) =>
+  set.has(arrayToKey(arr));
+const setAddArrayImmutable = (set: ArraySet, arr: Uint8Array) =>
+  set.add(arrayToKey(arr));
 
 export type Bucket = ReturnType<typeof kBucketSync>;
 export type HashFunction = (data: any) => HashedValue;
@@ -12,7 +34,7 @@ export type StateVersion = ReturnType<typeof computeStateVersion>;
 export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 type StateCache = ReturnType<typeof ArrayMap>;
-export const { ArrayMap, ArraySet } = arrayMapSet;
+export const { ArrayMap } = arrayMapSet;
 
 export const makeDHT = (
   id: PeerId,
@@ -74,9 +96,8 @@ export const EFFECT_startLookup = (
   const bucket = kBucketSync(target, bucketSize);
   const parents = ArrayMap();
   const [_, state] = latestState;
-  const alreadyConnected = ArraySet();
+  const alreadyConnected = ImmutableSet(state.keys());
   state.forEach(([_, peerPeers], peerId: PeerId) => {
-    alreadyConnected.add(peerId);
     bucket.set(peerId);
     for (const peerPeerId of peerPeers) {
       if (!parents.has(peerPeerId) && bucket.set(peerPeerId)) {
@@ -130,18 +151,17 @@ export const EFFECT_updateLookup = (
     bucket.del(nodeId);
     return [];
   }
-  alreadyConnected.add(nodeId);
+  lookup[2] = setAddArrayImmutable(alreadyConnected, nodeId);
   if (peers.has(target) || bucket.has(target)) return [];
-  const addedNodes = ArraySet();
-  for (const nodePeerId of nodePeers) {
-    if (!bucket.has(nodePeerId) && bucket.set(nodePeerId)) {
-      addedNodes.add(nodePeerId);
-    }
-  }
+  const addedNodes = ImmutableSet<string>(
+    nodePeers.filter((nodePeerId) =>
+      !bucket.has(nodePeerId) && bucket.set(nodePeerId)
+    ).map(arrayToKey),
+  );
   if (bucket.has(target)) return [[target, nodeId, nodeStateVersion]];
   bucket.del(id);
   return bucket.closest(target, number).filter((peer: PeerId) =>
-    addedNodes.has(peer)
+    setHasArrayImmutable(addedNodes, peer)
   ).map((peer: PeerId) => [
     peer,
     nodeId,
@@ -159,7 +179,7 @@ export const EFFECT_finishLookup = (
   const lookup = lookups.get(id);
   lookups.delete(id);
   const [bucket, number, alreadyConnected] = lookup;
-  return (peers.has(id) || alreadyConnected.has(id))
+  return (peers.has(id) || setHasArrayImmutable(alreadyConnected, id))
     ? [id]
     : bucket.closest(id, number);
 };
