@@ -186,12 +186,7 @@ Deno.test("es-dht", () => {
     const id = crypto.randomBytes(20);
     const x = makeSimpleDHT(id);
     idToPeer.set(id, x);
-    const state = send(
-      bootsrapPeer,
-      x.id,
-      "bootstrap",
-      getState(x, null),
-    );
+    const state = send(bootsrapPeer, id, "bootstrap", getState(x, null));
     EFFECT_commitState(x.cacheHistorySize, x.stateCache, x.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
