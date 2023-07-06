@@ -5,7 +5,6 @@ import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
-import { validateUint32 } from "https://deno.land/std@0.177.0/node/internal/validators.mjs";
 
 export const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
@@ -272,7 +271,7 @@ export const setPeer = (
   const { id, peers, latestState, ...rest } = d;
   if (
     uint8ArraysEqual(id, peerId) ||
-    !checkProofLength(hash, id.length + 1, peerId, proof, neighbors.length)
+    !checkProofLength(id.length + 1, peerId, proof, neighbors.length)
   ) return;
   const detectedPeer = checkStateProof(peerStateVersion, proof, peerId);
   if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return;
@@ -373,18 +372,11 @@ const reduceStateToProofItems = (
 export const checkStateProof = (
   stateVersion: Uint8Array,
   proof: Uint8Array,
-  nodeIdForProofWasGenerated: PeerId,
+  proofTarget: PeerId,
 ): Uint8Array | null =>
-  (
-      proof[0] === 0 &&
-      merkleTreeBinary.check_proof(
-        stateVersion,
-        proof,
-        nodeIdForProofWasGenerated,
-        sha1,
-      )
-    )
-    ? proof.subarray(1, nodeIdForProofWasGenerated.length + 1)
+  (proof[0] === 0 &&
+      merkleTreeBinary.check_proof(stateVersion, proof, proofTarget, sha1))
+    ? proof.subarray(1, proofTarget.length + 1)
     : null;
 
 const computeStateVersion = (
