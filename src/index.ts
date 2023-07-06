@@ -184,6 +184,39 @@ export const EFFECT_finishLookup = (
     : bucket.closest(id, number);
 };
 
+const checkProofLength = (
+  hash: HashFunction,
+  proofBlockSize: number,
+  peerId: PeerId,
+  proof: Proof,
+  neighborsLength: number,
+) => {
+  const expectedNumberOfItems = neighborsLength * 2 + 2;
+  const expectedProofHeight = Math.log2(expectedNumberOfItems);
+  const proofHeight = proof.length / proofBlockSize;
+  if (proofHeight === expectedProofHeight) return true;
+  if (proofHeight !== Math.ceil(expectedProofHeight)) return false;
+  let lastBlock = peerId;
+  for (
+    let i = 0;
+    i <= Math.ceil(
+          Math.pow(Math.log2(expectedNumberOfItems), 2) -
+            expectedNumberOfItems,
+        ) / 2;
+    ++i
+  ) {
+    if (
+      proof[i * proofBlockSize] !== 0 ||
+      !uint8ArraysEqual(
+        proof.subarray(i * proofBlockSize + 1, (i + 1) * proofBlockSize),
+        lastBlock,
+      )
+    ) return false;
+    lastBlock = hash(concatUint8Array(lastBlock, lastBlock));
+  }
+  return true;
+};
+
 // Returns `false` if proof is not valid and `true` when means there were no errors
 // `true` does not imply peer was necessarily added to k-bucket.
 export const EFFECT_setPeer = (
@@ -191,34 +224,12 @@ export const EFFECT_setPeer = (
   peerId: PeerId,
   peerStateVersion: StateVersion,
   proof: Proof,
-  peerPeers: PeerId[],
+  neighbors: PeerId[],
 ): boolean => {
-  if (uint8ArraysEqual(id, peerId)) return false;
-  const expectedNumberOfItems = peerPeers.length * 2 + 2;
-  const proofBlockSize = id.length + 1;
-  const expectedProofHeight = Math.log2(expectedNumberOfItems);
-  const proofHeight = proof.length / proofBlockSize;
-  if (proofHeight !== expectedProofHeight) {
-    if (proofHeight !== Math.ceil(expectedProofHeight)) return false;
-    let lastBlock = peerId;
-    for (
-      let i = 0;
-      i <= Math.ceil(
-            Math.pow(Math.log2(expectedNumberOfItems), 2) -
-              expectedNumberOfItems,
-          ) / 2;
-      ++i
-    ) {
-      if (
-        proof[i * proofBlockSize] !== 0 ||
-        !uint8ArraysEqual(
-          proof.subarray(i * proofBlockSize + 1, (i + 1) * proofBlockSize),
-          lastBlock,
-        )
-      ) return false;
-      lastBlock = hash(concatUint8Array(lastBlock, lastBlock));
-    }
-  }
+  if (
+    uint8ArraysEqual(id, peerId) ||
+    !checkProofLength(hash, id.length + 1, peerId, proof, neighbors.length)
+  ) return false;
   const detectedPeer = checkStateProof(
     hash,
     peerStateVersion,
@@ -228,7 +239,7 @@ export const EFFECT_setPeer = (
   if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return false;
   if (peers.set(peerId)) {
     const state = ArrayMap(Array.from(latestState[1]));
-    state.set(peerId, [peerStateVersion, peerPeers]);
+    state.set(peerId, [peerStateVersion, neighbors]);
     latestState[0] = computeStateVersion(hash, id, state);
     latestState[1] = state;
   }
