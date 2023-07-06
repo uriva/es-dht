@@ -100,7 +100,7 @@ const lookup = (send: Send) =>
 type Send = (
   recipient: PeerId,
   source: PeerId,
-  command: string,
+  command: Command,
   args: any,
 ) => any;
 
@@ -138,48 +138,58 @@ const get = (send: Send) => (dht: DHT, infoHash: HashedValue) => {
   return null;
 };
 
+type Command =
+  | "bootstrap"
+  | "get"
+  | "put"
+  | "get_state_proof"
+  | "get_state"
+  | "put_state";
+
 const response = (
   instance: DHT,
   source_id: PeerId,
-  command: string,
+  command: Command,
   data: any,
 ): any => {
-  switch (command) {
-    case "bootstrap":
-      return EFFECT_setPeer(instance, source_id, data[0], data[1], data[2])
-        ? (EFFECT_commitState(
-          instance.cacheHistorySize,
-          instance.stateCache,
-          instance.latestState,
-        ),
-          getState(instance, null))
-        : null;
-    case "get":
-      return instance.data.get(data) || null;
-    case "put":
-      instance.data.set(sha1(data), data);
-      break;
-    case "get_state_proof":
-      return getStateProof(
-        instance.latestState,
+  if (command === "bootstrap") {
+    return EFFECT_setPeer(instance, source_id, data[0], data[1], data[2])
+      ? (EFFECT_commitState(
+        instance.cacheHistorySize,
         instance.stateCache,
-        instance.id,
-        instance.hash,
-        data[1],
-        data[0],
-      );
-    case "get_state": {
-      return getState(instance, data).slice(1);
-    }
-    case "put_state":
-      EFFECT_setPeer(instance, source_id, data[0], data[1], data[2]);
+        instance.latestState,
+      ),
+        getState(instance, null))
+      : null;
+  }
+  if (command === "get") return instance.data.get(data) || null;
+  if (command === "put") {
+    instance.data.set(sha1(data), data);
+  }
+  if (command === "get_state_proof") {
+    return getStateProof(
+      instance.latestState,
+      instance.stateCache,
+      instance.id,
+      instance.hash,
+      data[1],
+      data[0],
+    );
+  }
+  if (command === "get_state") return getState(instance, data).slice(1);
+  if (command === "put_state") {
+    EFFECT_setPeer(instance, source_id, data[0], data[1], data[2]);
   }
 };
 
 Deno.test("es-dht", () => {
   const idToPeer = ArrayMap();
-  const send = (target: PeerId, source: PeerId, command: string, data: any[]) =>
-    response(idToPeer.get(target), source, command, data);
+  const send = (
+    target: PeerId,
+    source: PeerId,
+    command: Command,
+    data: any[],
+  ) => response(idToPeer.get(target), source, command, data);
   const bootsrapPeer = crypto.randomBytes(20);
   idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
   const nodes = range(100).map(() => {
