@@ -1,24 +1,22 @@
-import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
-
 import {
   ArrayMap,
   Bucket,
+  checkStateProof,
+  deletePeer,
   DHT,
   EFFECT_commitState,
-  EFFECT_deletePeer,
   EFFECT_finishLookup,
-  EFFECT_setPeer,
   EFFECT_startLookup,
   EFFECT_updateLookup,
-  HashFunction,
-  HashedValue,
-  Item,
-  PeerId,
-  StateVersion,
-  checkStateProof,
   getState,
   getStateProof,
+  HashedValue,
+  Item,
   makeDHT,
+  PeerId,
+  setPeer,
+  sha1,
+  StateVersion,
 } from "../src/index.ts";
 import {
   assert,
@@ -33,16 +31,12 @@ import {
   uint8ArraysEqual,
 } from "./utils.ts";
 
-const sha1 = (data: any): HashedValue =>
-  crypto.createHash("sha1").update(data).digest();
-
-const makeSimpleDHT = (id: PeerId) => makeDHT(id, sha1, 20, 1000, 0.2);
+const makeSimpleDHT = (id: PeerId) => makeDHT(id, 20, 1000, 0.2);
 
 const nextNodesToConnectTo = (
   send: Send,
   infoHash: HashedValue,
   id: PeerId,
-  hash: HashFunction,
   peers: Bucket,
   lookups: ReturnType<typeof ArrayMap>,
 ) =>
@@ -50,7 +44,6 @@ const nextNodesToConnectTo = (
   [target, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
   const targetStateVersion = checkStateProof(
-    hash,
     parentStateVersion,
     send(parentId, id, "get_state_proof", [target, parentStateVersion]),
     target,
@@ -62,7 +55,7 @@ const nextNodesToConnectTo = (
     "get_state",
     targetStateVersion,
   );
-  const checkResult = checkStateProof(hash, targetStateVersion, proof, target);
+  const checkResult = checkStateProof(targetStateVersion, proof, target);
   if (!checkResult || !uint8ArraysEqual(checkResult, target)) throw new Error();
   return EFFECT_updateLookup(
     peers,
@@ -78,7 +71,6 @@ const nextNodesToConnectTo = (
 const lookup = (send: Send) =>
 (
   id: PeerId,
-  hash: HashFunction,
   peers: Bucket,
   lookups: ReturnType<typeof ArrayMap>,
   infoHash: HashedValue,
@@ -87,11 +79,10 @@ const lookup = (send: Send) =>
   nodesToConnectTo.length
     ? lookup(send)(
       id,
-      hash,
       peers,
       lookups,
       infoHash,
-      mapCat(nextNodesToConnectTo(send, infoHash, id, hash, peers, lookups))(
+      mapCat(nextNodesToConnectTo(send, infoHash, id, peers, lookups))(
         nodesToConnectTo,
       ),
     )
@@ -109,7 +100,6 @@ const put = (send: Send) => (dht: DHT, data: any): HashedValue => {
   dht.data.set(infoHash, data);
   lookup(send)(
     dht.id,
-    dht.hash,
     dht.peers,
     dht.lookups,
     infoHash,
@@ -125,7 +115,6 @@ const get = (send: Send) => (dht: DHT, infoHash: HashedValue) => {
   for (
     const element of lookup(send)(
       dht.id,
-      dht.hash,
       dht.peers,
       dht.lookups,
       infoHash,
@@ -153,7 +142,7 @@ const response = (
   data: any,
 ): any => {
   if (command === "bootstrap") {
-    return EFFECT_setPeer(instance, source_id, data[0], data[1], data[2])
+    return setPeer(instance, source_id, data[0], data[1], data[2])
       ? (EFFECT_commitState(
         instance.cacheHistorySize,
         instance.stateCache,
@@ -171,14 +160,13 @@ const response = (
       instance.latestState,
       instance.stateCache,
       instance.id,
-      instance.hash,
       data[1],
       data[0],
     );
   }
   if (command === "get_state") return getState(instance, data).slice(1);
   if (command === "put_state") {
-    EFFECT_setPeer(instance, source_id, data[0], data[1], data[2]);
+    setPeer(instance, source_id, data[0], data[1], data[2]);
   }
 };
 
@@ -200,7 +188,7 @@ Deno.test("es-dht", () => {
     EFFECT_commitState(x.cacheHistorySize, x.stateCache, x.latestState);
     if (state) {
       const [stateVersion, proof, peers] = state;
-      EFFECT_setPeer(x, bootsrapPeer, stateVersion, proof, peers);
+      setPeer(x, bootsrapPeer, stateVersion, proof, peers);
     }
     return id;
   });
@@ -225,5 +213,5 @@ Deno.test("es-dht", () => {
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  EFFECT_deletePeer(alice, last(getState(alice, null)[2]));
+  deletePeer(alice, last(getState(alice, null)[2]));
 });

@@ -1,23 +1,41 @@
-import { Map as ImmutableMap, Set as ImmutableSet } from "npm:immutable";
+import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
+
+import { Map as ImmutableMap, Set as ImmutableSet, hash } from "npm:immutable";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
-import arrayMapSet from "npm:array-map-set@^1.0.1";
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
+import { validateUint32 } from "https://deno.land/std@0.177.0/node/internal/validators.mjs";
+
+export const sha1 = (data: any): HashedValue =>
+  crypto.createHash("sha1").update(data).digest();
 
 const arrayToKey = (arr: Uint8Array) => arr.join(",");
+const keyToArray = (key: string) => new Uint8Array(key.split(",").map(Number));
 type ArrayMap<V> = ImmutableMap<string, V>;
 
 const mapGetArrayImmutable = <V>(
   map: ArrayMap<V>,
   key: Uint8Array,
-): V | undefined => map.get(arrayToKey(key));
+): V => {
+  const value = map.get(arrayToKey(key));
+  if (value === undefined) throw "key no found";
+  return value;
+};
+
+const mapHasArrayImmutable = <V>(
+  map: ArrayMap<V>,
+  key: Uint8Array,
+): boolean => map.get(arrayToKey(key)) !== undefined;
 
 const mapSetArrayImmutable = <V>(
   map: ArrayMap<V>,
   key: Uint8Array,
   value: V,
 ): ArrayMap<V> => map.set(arrayToKey(key), value);
+
+const mapRemoveArrayImmutable = <V>(mapping: ArrayMap<V>, key: Uint8Array) =>
+  mapping.remove(arrayToKey(key));
 
 type ArraySet = ImmutableSet<string>;
 
@@ -27,35 +45,33 @@ const setAddArrayImmutable = (set: ArraySet, arr: Uint8Array) =>
   set.add(arrayToKey(arr));
 
 export type Bucket = ReturnType<typeof kBucketSync>;
-export type HashFunction = (data: any) => HashedValue;
-type State = Map<PeerId, [StateVersion, PeerId[]]>;
+type StateValue = [StateVersion, PeerId[]];
+type State = ArrayMap<StateValue>;
 type Proof = Uint8Array;
 export type StateVersion = ReturnType<typeof computeStateVersion>;
 export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
-type StateCache = ReturnType<typeof ArrayMap>;
-export const { ArrayMap } = arrayMapSet;
 
-export const makeDHT = (
+type VersionAndState = [StateVersion, State];
+
+export const makeDHT = <V>(
   id: PeerId,
-  hash: HashFunction,
   bucketSize: number,
   cacheHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
-  data: ArrayMap(),
+  data: ImmutableMap<string, V>(),
   id,
-  hash,
   bucketSize,
   fractionOfNodesFromSamePeer,
   cacheHistorySize,
-  stateCache: ArrayMap(),
-  latestState: [computeStateVersion(hash, id, new Map()), new Map()] as [
-    StateVersion,
-    State,
-  ],
+  stateCache: ImmutableMap<string, State>(),
+  latestState: [
+    computeStateVersion(id, ImmutableMap<string, StateValue>()),
+    ImmutableMap<string, StateValue>(),
+  ] as VersionAndState,
   peers: kBucketSync(id, bucketSize),
-  lookups: ArrayMap(),
+  lookups: ImmutableMap<string, [Bucket, number, ArraySet]>(),
 });
 
 export type PeerId = Uint8Array;
@@ -66,7 +82,7 @@ const EFFECT_bla = (
   state: State,
   bucket: Bucket,
   maxCountAllowed: number,
-  originatedFrom: ReturnType<typeof ArrayMap>,
+  originatedFrom: ArrayMap<number>,
   closestNode: PeerId,
   parentPeer: PeerId,
 ): Item | null => {
@@ -87,29 +103,58 @@ const EFFECT_bla = (
   return null;
 };
 
+const entries = <V>(mapping: ArrayMap<V>): [Uint8Array, V][] => {
+  const result: [Uint8Array, V][] = [];
+  mapping.forEach((value: V, key: string) => {
+    result.push([keyToArray(key), value]);
+  });
+  return result;
+};
+
+const keys = <V>(mapping: ArrayMap<V>) => entries(mapping).map(([key]) => key);
+const values = <V>(mapping: ArrayMap<V>) =>
+  entries(mapping).map(([, value]) => value);
+
+const parenthood = (state: State) => {
+  const parents: [string, PeerId][] = [];
+  entries(state).forEach(([peerId, [_, peerPeers]]) => {
+    for (const peerPeerId of peerPeers) {
+      parents.push([arrayToKey(peerPeerId), peerId]);
+    }
+  });
+  return ImmutableMap<string, PeerId>(parents);
+};
+
+const getBucket = (bucketSize: number, state: State, target: PeerId) => {
+  const bucket = kBucketSync(target, bucketSize);
+  keys(state).forEach((peer) => bucket.set(peer));
+  values(state).forEach(([, peerPeers]) => {
+    for (const peerPeerId of peerPeers) {
+      bucket.set(peerPeerId);
+    }
+  });
+  return bucket;
+};
+
 export const EFFECT_startLookup = (
   { id, lookups, fractionOfNodesFromSamePeer, bucketSize, peers, latestState }:
     DHT,
   target: PeerId,
 ): Item[] => {
   if (peers.has(target)) return [];
-  const bucket = kBucketSync(target, bucketSize);
-  const parents = ArrayMap();
-  const [_, state] = latestState;
-  const alreadyConnected = ImmutableSet(state.keys());
-  state.forEach(([_, peerPeers], peerId: PeerId) => {
-    bucket.set(peerId);
-    for (const peerPeerId of peerPeers) {
-      if (!parents.has(peerPeerId) && bucket.set(peerPeerId)) {
-        parents.set(peerPeerId, peerId);
-      }
-    }
-  });
+  const bucket = getBucket(bucketSize, latestState[1], target);
+  const alreadyConnected = ImmutableSet(latestState[1].keys());
+  const parents = parenthood(latestState[1]);
   if (bucket.has(target)) {
-    const parentPeerState = state.get(parents.get(target));
-    if (!parentPeerState) throw "id exists but no parent";
     lookups.set(target, [bucket, bucketSize, alreadyConnected]);
-    return [[target, parents.get(target), parentPeerState[0]]];
+    return [[
+      target,
+      mapGetArrayImmutable<PeerId>(parents, target),
+      mapGetArrayImmutable<StateValue>(
+        latestState[1],
+        mapGetArrayImmutable<PeerId>(parents, target),
+      )[0],
+    ]];
   }
   bucket.del(id);
   const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
@@ -118,7 +163,7 @@ export const EFFECT_startLookup = (
     const originatedFrom = ArrayMap();
     const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
       EFFECT_bla(
-        state,
+        latestState[1],
         bucket,
         Math.ceil(closestSoFar.length * maxFraction),
         originatedFrom,
@@ -176,16 +221,14 @@ export const EFFECT_finishLookup = (
   peers: Bucket,
   id: PeerId,
 ): PeerId[] => {
-  const lookup = lookups.get(id);
+  const [bucket, number, alreadyConnected] = lookups.get(id);
   lookups.delete(id);
-  const [bucket, number, alreadyConnected] = lookup;
   return (peers.has(id) || setHasArrayImmutable(alreadyConnected, id))
     ? [id]
     : bucket.closest(id, number);
 };
 
 const checkProofLength = (
-  hash: HashFunction,
   proofBlockSize: number,
   peerId: PeerId,
   proof: Proof,
@@ -212,54 +255,55 @@ const checkProofLength = (
         lastBlock,
       )
     ) return false;
-    lastBlock = hash(concatUint8Array(lastBlock, lastBlock));
+    lastBlock = sha1(concatUint8Array(lastBlock, lastBlock));
   }
   return true;
 };
 
-// Returns `false` if proof is not valid and `true` when means there were no errors
-// `true` does not imply peer was necessarily added to k-bucket.
-export const EFFECT_setPeer = (
-  { id, hash, peers, latestState }: DHT,
+// Returns `undefined` if proof is invalid, otherwise the new DHT (possibly unmodified).
+// TODO: check handling of return value in the tests.
+export const setPeer = (
+  d: DHT,
   peerId: PeerId,
   peerStateVersion: StateVersion,
   proof: Proof,
   neighbors: PeerId[],
-): boolean => {
+): DHT | undefined => {
+  const { id, peers, latestState, ...rest } = d;
   if (
     uint8ArraysEqual(id, peerId) ||
     !checkProofLength(hash, id.length + 1, peerId, proof, neighbors.length)
-  ) return false;
-  const detectedPeer = checkStateProof(
-    hash,
+  ) return;
+  const detectedPeer = checkStateProof(peerStateVersion, proof, peerId);
+  if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return;
+  if (bucketHas(peers, peerId)) return d;
+  const state = mapSetArrayImmutable<StateValue>(latestState[1], peerId, [
     peerStateVersion,
-    proof,
-    peerId,
-  );
-  if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return false;
-  if (peers.set(peerId)) {
-    const state = ArrayMap(Array.from(latestState[1]));
-    state.set(peerId, [peerStateVersion, neighbors]);
-    latestState[0] = computeStateVersion(hash, id, state);
-    latestState[1] = state;
-  }
-  return true;
+    neighbors,
+  ]);
+  return {
+    ...rest,
+    id,
+    peers: bucketAdd(peers, peerId),
+    latestState: [computeStateVersion(id, state), state],
+  };
 };
 
-export const EFFECT_deletePeer = (
-  { latestState, peers, hash, id }: DHT,
-  peerId: PeerId,
-) => {
-  const state = ArrayMap(Array.from(latestState[1]));
-  if (!state.has(peerId)) return;
-  peers.del(peerId);
-  state.delete(peerId);
-  latestState[0] = computeStateVersion(hash, id, state);
-  latestState[1] = state;
+// TODO: propagate effects of this being immutable.
+export const deletePeer = (d: DHT, peerId: PeerId): DHT => {
+  const { latestState, peers, id, ...rest } = d;
+  if (!mapHasArrayImmutable(latestState[1], peerId)) return d;
+  const newState = mapRemoveArrayImmutable(latestState[1], peerId);
+  return {
+    peers: bucketRemove(peers, peerId),
+    latestState: [computeStateVersion(id, newState), newState],
+    id,
+    ...rest,
+  };
 };
 
 export const getState = (
-  { latestState, stateCache, id, hash }: DHT,
+  { latestState, stateCache, id }: DHT,
   stateVersion: StateVersion | null,
 ): [StateVersion, Proof, PeerId[]] => {
   const [stateVersion2, state] = stateVersion
@@ -267,8 +311,8 @@ export const getState = (
     : latestState;
   return [
     stateVersion2,
-    getStateProof(latestState, stateCache, id, hash, stateVersion2, id),
-    Array.from(state.keys()),
+    getStateProof(latestState, stateCache, id, stateVersion2, id),
+    keys(state),
   ];
 };
 
@@ -278,7 +322,7 @@ export const getState = (
 // and discard the rest.
 export const EFFECT_commitState = (
   size: number,
-  stateCache: StateCache,
+  stateCache: ArrayMap<State>,
   latestState: [StateVersion, State],
 ) => {
   const [key, value] = latestState;
@@ -289,24 +333,23 @@ export const EFFECT_commitState = (
 
 const getStateHelper = (
   latestState: [StateVersion, State],
-  stateCache: StateCache,
+  stateCache: ArrayMap<State>,
   stateVersion: StateVersion,
 ): [StateVersion, State] =>
-  (uint8ArraysEqual(stateVersion, latestState[0]))
+  uint8ArraysEqual(stateVersion, latestState[0])
     ? latestState
     : [stateVersion, stateCache.get(stateVersion)];
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
   latestState: [StateVersion, State],
-  stateCache: StateCache,
+  stateCache: ArrayMap<State>,
   id: PeerId,
-  hash: HashFunction,
   stateVersion: StateVersion,
   peerId: PeerId,
 ): Proof => {
   const [_, state] = getStateHelper(latestState, stateCache, stateVersion);
-  return (state.has(peerId) || uint8ArraysEqual(peerId, id))
+  return (mapHasArrayImmutable(state, peerId) || uint8ArraysEqual(peerId, id))
     ? merkleTreeBinary.get_proof(
       reduceStateToProofItems(id, state),
       peerId,
@@ -320,7 +363,7 @@ const reduceStateToProofItems = (
   state: State,
 ): (PeerId | StateVersion)[] => {
   const items = [];
-  state.forEach(([peerStateVersion], peerId: PeerId) => {
+  entries(state).forEach(([peerId, [peerStateVersion]]) => {
     items.push(peerId, peerStateVersion);
   });
   items.push(id, id);
@@ -328,7 +371,6 @@ const reduceStateToProofItems = (
 };
 
 export const checkStateProof = (
-  hash: HashFunction,
   stateVersion: Uint8Array,
   proof: Uint8Array,
   nodeIdForProofWasGenerated: PeerId,
@@ -339,18 +381,14 @@ export const checkStateProof = (
         stateVersion,
         proof,
         nodeIdForProofWasGenerated,
-        hash,
+        sha1,
       )
     )
     ? proof.subarray(1, nodeIdForProofWasGenerated.length + 1)
     : null;
 
 const computeStateVersion = (
-  hash: HashFunction,
   id: PeerId,
   newState: State,
 ): ReturnType<typeof merkleTreeBinary.get_root> =>
-  merkleTreeBinary.get_root(
-    reduceStateToProofItems(id, newState),
-    hash,
-  );
+  merkleTreeBinary.get_root(reduceStateToProofItems(id, newState), sha1);
