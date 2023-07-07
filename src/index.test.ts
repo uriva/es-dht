@@ -1,22 +1,23 @@
+import { ArrayMap, makeMap } from "./containers.ts";
 import {
-  ArrayMap,
   Bucket,
-  checkStateProof,
-  deletePeer,
   DHT,
   EFFECT_commitState,
   EFFECT_finishLookup,
   EFFECT_startLookup,
   EFFECT_updateLookup,
-  getState,
-  getStateProof,
   HashedValue,
   Item,
-  makeDHT,
+  LookupValue,
   PeerId,
+  StateVersion,
+  checkStateProof,
+  deletePeer,
+  getState,
+  getStateProof,
+  makeDHT,
   setPeer,
   sha1,
-  StateVersion,
 } from "../src/index.ts";
 import {
   assert,
@@ -38,7 +39,7 @@ const nextNodesToConnectTo = (
   infoHash: HashedValue,
   id: PeerId,
   peers: Bucket,
-  lookups: ReturnType<typeof ArrayMap>,
+  lookups: ArrayMap<LookupValue>,
 ) =>
 (
   [target, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
@@ -72,7 +73,7 @@ const lookup = (send: Send) =>
 (
   id: PeerId,
   peers: Bucket,
-  lookups: ReturnType<typeof ArrayMap>,
+  lookups: ArrayMap<LookupValue>,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
 ): PeerId[] =>
@@ -171,7 +172,7 @@ const response = (
 };
 
 Deno.test("es-dht", () => {
-  const idToPeer = ArrayMap();
+  const idToPeer = makeMap<PeerId>();
   const send = (
     target: PeerId,
     source: PeerId,

@@ -1,10 +1,27 @@
-import { set as ImmutableSet } from "immutable";
+import {
+  ArraySet,
+  filterSet,
+  makeSet,
+  setAddArrayImmutable,
+  setElements,
+  setRemoveArrayImmutable,
+} from "./containers.ts";
 
-type Node = {
+type Node = TerminalNode | NonterminalNode;
+
+type TerminalNode = {
+  type: "terminal";
+  size: number;
   target: Uint8Array;
-  leafs: ImmutableSet<string> | null;
-  left: Node | null;
-  right: Node | null;
+  leafs: ArraySet;
+  splittable: boolean;
+};
+
+type NonterminalNode = {
+  type: "nonterminal";
+  target: Uint8Array;
+  left: Node;
+  right: Node;
   splittable: boolean;
 };
 
@@ -16,10 +33,12 @@ const distance = (x: Uint8Array, y: Uint8Array) => {
   return distance;
 };
 
+const maskAllButNthBit = (n: number, x) => x & Math.pow(2, 7 - n % 8);
+
 const determineNode = (
   bitIndex: number,
   target: Uint8Array,
-) => !!(target[~~(bitIndex / 8)] & Math.pow(2, 7 - bitIndex % 8));
+) => !!maskAllButNthBit(target[~~(bitIndex / 8)], bitIndex);
 
 export const closest = (
   target: Uint8Array,
@@ -29,14 +48,15 @@ export const closest = (
   let results: Uint8Array[] = [];
   const nodesToCheck: Node[] = [root];
   let bitIndex = 0;
-  while (nodesToCheck.length && results.length < k) {
-    const { left, right, leafs } = nodesToCheck.pop() as Node;
-    if (!leafs.size) {
+  while (nodesToCheck.length > 0 && results.length < k) {
+    const node = nodesToCheck.pop() as Node;
+    if (node.type === "nonterminal") {
       bitIndex++;
-      if (determineNode(bitIndex, target)) nodesToCheck.push(left, right);
-      else nodesToCheck.push(right, left);
+      if (determineNode(bitIndex, target)) {
+        nodesToCheck.push(node.left, node.right);
+      } else nodesToCheck.push(node.right, node.left);
     } else {
-      results = results.concat(Array.from(leafs));
+      results = results.concat(setElements(node.leafs));
     }
   }
   return results
@@ -46,89 +66,77 @@ export const closest = (
     .map(([, x]) => x);
 };
 
-const kBucketSync = (target: ArrayBufferView, size: number) => ({
+export const kBucket = (target: Uint8Array, size: number): Node => ({
   target,
+  splittable: true,
+  leafs: makeSet(),
+  type: "terminal",
   size,
-  root: {
-    leafs: null,
-    left: null,
-    right: null,
-    splittable: true,
-  },
 });
 
-const set = (id: Uint8Array, node: Node, bitIndex: number): Node => ({
-  leafs: node.leafs,
-  right: determineNode(bitIndex, id)
-    ? set(id, node.right, bitIndex + 1)
-    : node.right,
-  left: !determineNode(bitIndex, id)
-    ? set(id, node.left, bitIndex + 1)
-    : node.left,
-  target: node.target,
-  splittable: node.splittable,
-  //   while (!node.leafs) {
-  //     node = determineNode(bitIndex, id);
-  //     bitIndex++;
-  //   }
-  //   if (this._node_data.has(id)) {
-  //     node.contacts.delete(id);
-  //     node.contacts.add(id);
-  //     return true;
-  //   }
-  //   if (node.contacts.size < this._bucket_size) {
-  //     node.contacts.add(id);
-  //     return true;
-  //   }
-  //   if (node.splittable) {
-  //     splitNodeLeafs(bitIndex, node);
-  //     return set(id, on_full);
-  //   }
-  //   on_full(Array.from(node.contacts));
-  //   return false;
-});
+const set = (id: Uint8Array, node: Node, bitIndex: number): Node =>
+  node.type === "terminal"
+    ? (node.leafs.size < node.size
+      ? { ...node, leafs: setAddArrayImmutable(node.leafs, id) }
+      : (
+        node.splittable
+          ? set(id, splitNodeLeafs(bitIndex, node), bitIndex)
+          : node
+      ))
+    : ({
+      ...node,
+      right: determineNode(bitIndex, id)
+        ? set(id, node.right, bitIndex + 1)
+        : node.right,
+      left: !determineNode(bitIndex, id)
+        ? set(id, node.left, bitIndex + 1)
+        : node.left,
+    });
 
-const transitiveLeafs = ({ left, right, leafs }: Node): ImmutableSet<string> =>
-  (leafs.size)
-    ? leafs
-    : (left ? transitiveLeafs(left) : ImmutableSet<string>()).union(
-      right ? transitiveLeafs(right) : ImmutableSet<string>(),
+const transitiveLeafs = (
+  node: Node,
+): ArraySet =>
+  (node.type === "terminal")
+    ? node.leafs
+    : (node.left ? transitiveLeafs(node.left) : makeSet()).union(
+      node.right ? transitiveLeafs(node.right) : makeSet(),
     );
 
-const del = (node: Node, bitIndex: number): Node =>
-  (leafs.size) ? { ...node, leafs: node.contacts.remove(id) } : {
-    ...node,
-    left: determineNode(bitIndex, id)
-      ? del(id, node.left, bitIndex + 1)
-      : node.left,
-    right: determineNode(bitIndex, id)
-      ? node.right
-      : del(id, node.right, bitIndex + 1),
-  };
+export const del = (id: Uint8Array, node: Node, bitIndex: number): Node =>
+  node.type === "terminal"
+    ? { ...node, leafs: setRemoveArrayImmutable(node.leafs, id) }
+    : {
+      ...node,
+      left: determineNode(bitIndex, id)
+        ? del(id, node.left, bitIndex + 1)
+        : node.left,
+      right: determineNode(bitIndex, id)
+        ? node.right
+        : del(id, node.right, bitIndex + 1),
+    };
 
-const splitNodeLeafs = (
-  bitIndex: number,
-  { leafs, target }: Node,
-): Node => ({
-  target,
-  leafs: ImmutableSet<string>(),
-  splittable: true,
+const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
+  type: "nonterminal",
+  target: node.target,
+  splittable: false,
   left: {
-    target,
-    splittable: determineNode(bitIndex, target),
-    leafs: ImmutableSet<string>(
-      leafs.filter((id: Uint8Array) => determineNode(bitIndex, id)),
+    size: node.size,
+    type: "terminal",
+    target: node.target,
+    splittable: determineNode(bitIndex, node.target),
+    leafs: filterSet(
+      node.leafs,
+      (id: Uint8Array) => determineNode(bitIndex, id),
     ),
-    left: null,
-    right: null,
   },
   right: {
-    target,
-    splittable: !determineNode(bitIndex, target),
-    leafs: ImmutableSet<string>(
-      leafs.filter((id: Uint8Array) => !determineNode(bitIndex, id)),
+    size: node.size,
+    type: "terminal",
+    target: node.target,
+    splittable: !determineNode(bitIndex, node.target),
+    leafs: filterSet(
+      node.leafs,
+      (id: Uint8Array) => !determineNode(bitIndex, id),
     ),
-    left: null,
-    right: null,
   },
 });

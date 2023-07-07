@@ -1,6 +1,15 @@
 import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
-import { Map as ImmutableMap, Set as ImmutableSet, hash } from "npm:immutable";
+import {
+  ArrayMap,
+  ArraySet,
+  entries,
+  keys,
+  makeMap,
+  mapGetArrayImmutable,
+  setHasArrayImmutable,
+  values,
+} from "./containers.ts";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
@@ -8,40 +17,6 @@ import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
 export const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
-
-const arrayToKey = (arr: Uint8Array) => arr.join(",");
-const keyToArray = (key: string) => new Uint8Array(key.split(",").map(Number));
-type ArrayMap<V> = ImmutableMap<string, V>;
-
-const mapGetArrayImmutable = <V>(
-  map: ArrayMap<V>,
-  key: Uint8Array,
-): V => {
-  const value = map.get(arrayToKey(key));
-  if (value === undefined) throw "key no found";
-  return value;
-};
-
-const mapHasArrayImmutable = <V>(
-  map: ArrayMap<V>,
-  key: Uint8Array,
-): boolean => map.get(arrayToKey(key)) !== undefined;
-
-const mapSetArrayImmutable = <V>(
-  map: ArrayMap<V>,
-  key: Uint8Array,
-  value: V,
-): ArrayMap<V> => map.set(arrayToKey(key), value);
-
-const mapRemoveArrayImmutable = <V>(mapping: ArrayMap<V>, key: Uint8Array) =>
-  mapping.remove(arrayToKey(key));
-
-type ArraySet = ImmutableSet<string>;
-
-const setHasArrayImmutable = (set: ArraySet, arr: Uint8Array) =>
-  set.has(arrayToKey(arr));
-const setAddArrayImmutable = (set: ArraySet, arr: Uint8Array) =>
-  set.add(arrayToKey(arr));
 
 export type Bucket = ReturnType<typeof kBucketSync>;
 type StateValue = [StateVersion, PeerId[]];
@@ -52,6 +27,7 @@ export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
 type VersionAndState = [StateVersion, State];
+export type LookupValue = [Bucket, number, ArraySet];
 
 export const makeDHT = <V>(
   id: PeerId,
@@ -59,18 +35,18 @@ export const makeDHT = <V>(
   cacheHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
-  data: ImmutableMap<string, V>(),
+  data: makeMap<V>(),
   id,
   bucketSize,
   fractionOfNodesFromSamePeer,
   cacheHistorySize,
-  stateCache: ImmutableMap<string, State>(),
+  stateCache: makeMap<State>(),
   latestState: [
-    computeStateVersion(id, ImmutableMap<string, StateValue>()),
-    ImmutableMap<string, StateValue>(),
+    computeStateVersion(id, makeMap<StateValue>()),
+    makeMap<StateValue>(),
   ] as VersionAndState,
   peers: kBucketSync(id, bucketSize),
-  lookups: ImmutableMap<string, [Bucket, number, ArraySet]>(),
+  lookups: makeMap<LookupValue>(),
 });
 
 export type PeerId = Uint8Array;
@@ -102,18 +78,6 @@ const EFFECT_bla = (
   return null;
 };
 
-const entries = <V>(mapping: ArrayMap<V>): [Uint8Array, V][] => {
-  const result: [Uint8Array, V][] = [];
-  mapping.forEach((value: V, key: string) => {
-    result.push([keyToArray(key), value]);
-  });
-  return result;
-};
-
-const keys = <V>(mapping: ArrayMap<V>) => entries(mapping).map(([key]) => key);
-const values = <V>(mapping: ArrayMap<V>) =>
-  entries(mapping).map(([, value]) => value);
-
 const parenthood = (state: State) => {
   const parents: [string, PeerId][] = [];
   entries(state).forEach(([peerId, [_, peerPeers]]) => {
@@ -121,7 +85,7 @@ const parenthood = (state: State) => {
       parents.push([arrayToKey(peerPeerId), peerId]);
     }
   });
-  return ImmutableMap<string, PeerId>(parents);
+  return makeMap<PeerId>(parents);
 };
 
 const getBucket = (bucketSize: number, state: State, target: PeerId) => {
@@ -159,7 +123,7 @@ export const EFFECT_startLookup = (
   const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
   while (true) {
     const closestSoFar = bucket.closest(target, bucketSize);
-    const originatedFrom = ArrayMap();
+    const originatedFrom = makeMap<number>();
     const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
       EFFECT_bla(
         latestState[1],
@@ -179,7 +143,7 @@ export const EFFECT_startLookup = (
 
 export const EFFECT_updateLookup = (
   peers: Bucket,
-  lookups: ReturnType<typeof ArrayMap>,
+  lookups: ArrayMap,
   id: PeerId,
   target: HashedValue,
   nodeId: PeerId,
@@ -216,7 +180,7 @@ export const EFFECT_updateLookup = (
 // Returns `[id]` if node with specified ID was connected directly,
 // an array of closest IDs if exact node wasn't found and `null` otherwise.
 export const EFFECT_finishLookup = (
-  lookups: ReturnType<typeof ArrayMap>,
+  lookups: ArrayMap<LookupValue>,
   peers: Bucket,
   id: PeerId,
 ): PeerId[] => {
