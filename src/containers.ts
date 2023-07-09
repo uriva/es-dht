@@ -1,4 +1,4 @@
-import { hash, Map as ImmutableMap, Set as ImmutableSet } from "npm:immutable";
+import { Map as ImmutableMap, Set as ImmutableSet, hash } from "npm:immutable";
 
 const arrayToKey = (arr: Uint8Array) => arr.join(",");
 const keyToArray = (key: string) => new Uint8Array(key.split(",").map(Number));
@@ -38,8 +38,11 @@ export const mapRemoveArrayImmutable = <V>(
   key: Uint8Array,
 ) => mapping.remove(arrayToKey(key));
 
-export const makeMap = <V>() => ImmutableMap<string, V>();
-export const makeSet = ImmutableSet<string>;
+export const makeMap = <V>(x: [Uint8Array, V][]) =>
+  ImmutableMap<string, V>(x.map(([k, v]) => [arrayToKey(k), v]));
+
+export const makeSet = (x: Uint8Array[]) =>
+  ImmutableSet<string>(x.map(arrayToKey));
 
 export const entries = <V>(mapping: ArrayMap<V>): [Uint8Array, V][] => {
   const result: [Uint8Array, V][] = [];

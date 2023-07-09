@@ -66,10 +66,16 @@ export const closest = (
 export const kBucket = (target: Uint8Array, size: number): Node => ({
   target,
   splittable: true,
-  leafs: makeSet(),
+  leafs: makeSet([]),
   type: "terminal",
   size,
 });
+export type Bucket = Node;
+
+export const bucketAddAll = (bucket: Node, elements: Uint8Array[]) => {
+  for (const element of elements) bucket = bucketAdd(bucket, element);
+  return bucket;
+};
 
 export const bucketAdd = (node: Node, element: Uint8Array) =>
   set(element, node, 0);
@@ -101,8 +107,8 @@ const transitiveLeafs = (
 ): ArraySet =>
   node.type === "terminal"
     ? node.leafs
-    : (node.left ? transitiveLeafs(node.left) : makeSet()).union(
-      node.right ? transitiveLeafs(node.right) : makeSet(),
+    : (node.left ? transitiveLeafs(node.left) : makeSet([])).union(
+      node.right ? transitiveLeafs(node.right) : makeSet([]),
     );
 
 export const bucketRemove = (node: Node, element: Uint8Array) =>

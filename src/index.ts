@@ -15,16 +15,20 @@ import {
   setHasArrayImmutable,
   values,
 } from "./containers.ts";
-import { bucketAdd, bucketRemove } from "./kBucket.ts";
+import {
+  Bucket,
+  bucketAdd,
+  bucketAddAll,
+  bucketRemove,
+  kBucket,
+} from "./kBucket.ts";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
-import kBucketSync from "npm:k-bucket-sync@^0.1.3";
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
 export const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
 
-export type Bucket = ReturnType<typeof kBucketSync>;
 type StateValue = [StateVersion, PeerId[]];
 type State = ArrayMap<StateValue>;
 type Proof = Uint8Array;
@@ -41,18 +45,18 @@ export const makeDHT = <V>(
   cacheHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
-  data: makeMap<V>(),
+  data: makeMap<V>([]),
   id,
   bucketSize,
   fractionOfNodesFromSamePeer,
   cacheHistorySize,
-  stateCache: makeMap<State>(),
+  stateCache: makeMap<State>([]),
   latestState: [
-    computeStateVersion(id, makeMap<StateValue>()),
-    makeMap<StateValue>(),
+    computeStateVersion(id, makeMap<StateValue>([])),
+    makeMap<StateValue>([]),
   ] as VersionAndState,
-  peers: kBucketSync(id, bucketSize),
-  lookups: makeMap<LookupValue>(),
+  peers: kBucket(id, bucketSize),
+  lookups: makeMap<LookupValue>([]),
 });
 
 export type PeerId = Uint8Array;
@@ -97,12 +101,9 @@ const parenthood = (state: State) => {
 };
 
 const getBucket = (bucketSize: number, state: State, target: PeerId) => {
-  const bucket = kBucketSync(target, bucketSize);
-  keys(state).forEach((peer) => bucket.set(peer));
+  let bucket = bucketAddAll(kBucket(target, bucketSize), keys(state));
   values(state).forEach(([, peerPeers]) => {
-    for (const peerPeerId of peerPeers) {
-      bucket.set(peerPeerId);
-    }
+    bucket = bucketAddAll(bucket, peerPeers);
   });
   return bucket;
 };
@@ -116,7 +117,7 @@ export const EFFECT_startLookup = (
   const bucket = getBucket(bucketSize, latestState[1], target);
   const alreadyConnected = makeSet(keys(latestState[1]));
   const parents = parenthood(latestState[1]);
-  if (bucket.has(target)) {
+  if (bucketHas(bucket, target)) {
     lookups.set(target, [bucket, bucketSize, alreadyConnected]);
     return [[
       target,
@@ -131,7 +132,7 @@ export const EFFECT_startLookup = (
   const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
   while (true) {
     const closestSoFar = bucket.closest(target, bucketSize);
-    const originatedFrom = makeMap<number>();
+    const originatedFrom = makeMap<number>([]);
     const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
       EFFECT_bla(
         latestState[1],
@@ -151,7 +152,7 @@ export const EFFECT_startLookup = (
 
 export const EFFECT_updateLookup = (
   peers: Bucket,
-  lookups: ArrayMap,
+  lookups: ArrayMap<LookupValue>,
   id: PeerId,
   target: HashedValue,
   nodeId: PeerId,
@@ -175,7 +176,7 @@ export const EFFECT_updateLookup = (
       !bucketHas(bucket, nodePeerId) && bucket.set(nodePeerId)
     ),
   );
-  if (bucket.has(target)) return [[target, nodeId, nodeStateVersion]];
+  if (bucketHas(bucket, target)) return [[target, nodeId, nodeStateVersion]];
   bucket.del(id);
   return bucket.closest(target, number).filter((peer: PeerId) =>
     setHasArrayImmutable(addedNodes, peer)
@@ -195,7 +196,7 @@ export const EFFECT_finishLookup = (
 ): PeerId[] => {
   const [bucket, number, alreadyConnected] = mapGetArrayImmutable(lookups, id);
   lookups.delete(id);
-  return (peers.has(id) || setHasArrayImmutable(alreadyConnected, id))
+  return (bucketHas(peers, id) || setHasArrayImmutable(alreadyConnected, id))
     ? [id]
     : bucket.closest(id, number);
 };
