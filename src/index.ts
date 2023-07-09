@@ -6,10 +6,12 @@ import {
   entries,
   keys,
   makeMap,
+  makeSet,
   mapGetArrayImmutable,
   mapHasArrayImmutable,
   mapRemoveArrayImmutable,
   mapSetArrayImmutable,
+  setAddArrayImmutable,
   setHasArrayImmutable,
   values,
 } from "./containers.ts";
@@ -66,7 +68,9 @@ const EFFECT_bla = (
   parentPeer: PeerId,
 ): Item | null => {
   if (parentPeer) {
-    const count = originatedFrom.get(parentPeer) || 0;
+    const count = mapHasArrayImmutable(originatedFrom, parentPeer)
+      ? mapGetArrayImmutable(originatedFrom, parentPeer)
+      : 0;
     originatedFrom.set(parentPeer, count + 1);
     if (count > maxCountAllowed) {
       bucket.del(closestNode);
@@ -110,7 +114,7 @@ export const EFFECT_startLookup = (
 ): Item[] => {
   if (peers.has(target)) return [];
   const bucket = getBucket(bucketSize, latestState[1], target);
-  const alreadyConnected = ImmutableSet(latestState[1].keys());
+  const alreadyConnected = makeSet(keys(latestState[1]));
   const parents = parenthood(latestState[1]);
   if (bucket.has(target)) {
     lookups.set(target, [bucket, bucketSize, alreadyConnected]);
@@ -135,7 +139,7 @@ export const EFFECT_startLookup = (
         Math.ceil(closestSoFar.length * maxFraction),
         originatedFrom,
         closestNodeId,
-        parents.get(closestNodeId),
+        mapGetArrayImmutable(parents, closestNodeId),
       )
     ).filter((x: Item | null) => x);
     if (nodesToConnectTo.length) {
@@ -165,10 +169,11 @@ export const EFFECT_updateLookup = (
   }
   lookup[2] = setAddArrayImmutable(alreadyConnected, nodeId);
   if (peers.has(target) || bucket.has(target)) return [];
-  const addedNodes = ImmutableSet<string>(
+  const addedNodes = makeSet(
+    // todo this must be split into two filters...
     nodePeers.filter((nodePeerId) =>
-      !bucket.has(nodePeerId) && bucket.set(nodePeerId)
-    ).map(arrayToKey),
+      !bucketHas(bucket, nodePeerId) && bucket.set(nodePeerId)
+    ),
   );
   if (bucket.has(target)) return [[target, nodeId, nodeStateVersion]];
   bucket.del(id);
@@ -188,7 +193,7 @@ export const EFFECT_finishLookup = (
   peers: Bucket,
   id: PeerId,
 ): PeerId[] => {
-  const [bucket, number, alreadyConnected] = lookups.get(id);
+  const [bucket, number, alreadyConnected] = mapGetArrayImmutable(lookups, id);
   lookups.delete(id);
   return (peers.has(id) || setHasArrayImmutable(alreadyConnected, id))
     ? [id]
