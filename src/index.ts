@@ -91,10 +91,10 @@ const EFFECT_bla = (
 };
 
 const parenthood = (state: State) => {
-  const parents: [string, PeerId][] = [];
+  const parents: [PeerId, PeerId][] = [];
   entries(state).forEach(([peerId, [_, peerPeers]]) => {
     for (const peerPeerId of peerPeers) {
-      parents.push([arrayToKey(peerPeerId), peerId]);
+      parents.push([peerPeerId, peerId]);
     }
   });
   return makeMap<PeerId>(parents);
