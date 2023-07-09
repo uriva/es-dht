@@ -38,8 +38,8 @@ const determineNode = (bitIndex: number, target: Uint8Array) =>
   !!(mask(bitIndex % 8) & target[Math.floor(bitIndex / 8)]);
 
 export const closest = (
-  target: Uint8Array,
   root: Node,
+  target: Uint8Array,
   k: number,
 ): Uint8Array[] => {
   let results: Uint8Array[] = [];

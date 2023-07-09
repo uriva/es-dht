@@ -20,6 +20,7 @@ import {
   bucketAdd,
   bucketAddAll,
   bucketRemove,
+  closest,
   kBucket,
 } from "./kBucket.ts";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
@@ -63,33 +64,6 @@ export type PeerId = Uint8Array;
 // [nodeId, parentPeerId, parentPeerStateVersion]
 export type Item = [PeerId, PeerId, StateVersion];
 
-const EFFECT_bla = (
-  state: State,
-  bucket: Bucket,
-  maxCountAllowed: number,
-  originatedFrom: ArrayMap<number>,
-  closestNode: PeerId,
-  parentPeer: PeerId,
-): Item | null => {
-  if (parentPeer) {
-    const count = mapHasArrayImmutable(originatedFrom, parentPeer)
-      ? mapGetArrayImmutable(originatedFrom, parentPeer)
-      : 0;
-    originatedFrom.set(parentPeer, count + 1);
-    if (count > maxCountAllowed) {
-      bucket.del(closestNode);
-      return null;
-    }
-    const parentPeerState = state.get(parentPeer);
-    if (parentPeerState) return [closestNode, parentPeer, parentPeerState[0]];
-    throw "no state for parent id";
-  }
-  const count = originatedFrom.get(closestNode) || 0;
-  originatedFrom.set(closestNode, count + 1);
-  if (count > maxCountAllowed) bucket.del(closestNode);
-  return null;
-};
-
 const parenthood = (state: State) => {
   const parents: [PeerId, PeerId][] = [];
   entries(state).forEach(([peerId, [_, peerPeers]]) => {
@@ -113,7 +87,7 @@ export const EFFECT_startLookup = (
     DHT,
   target: PeerId,
 ): Item[] => {
-  if (peers.has(target)) return [];
+  if (bucketHas(peers, target)) return [];
   const bucket = getBucket(bucketSize, latestState[1], target);
   const alreadyConnected = makeSet(keys(latestState[1]));
   const parents = parenthood(latestState[1]);
@@ -131,18 +105,35 @@ export const EFFECT_startLookup = (
   bucket.del(id);
   const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
   while (true) {
-    const closestSoFar = bucket.closest(target, bucketSize);
+    const closestSoFar = closest(bucket, target, bucketSize);
     const originatedFrom = makeMap<number>([]);
-    const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) =>
-      EFFECT_bla(
-        latestState[1],
-        bucket,
-        Math.ceil(closestSoFar.length * maxFraction),
-        originatedFrom,
-        closestNodeId,
-        mapGetArrayImmutable(parents, closestNodeId),
-      )
-    ).filter((x: Item | null) => x);
+    const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
+    const state = latestState[1];
+    const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) => {
+      if (mapHasArrayImmutable(parents, closestNode)) {
+        const parentPeer = mapGetArrayImmutable(parents, closestNodeId);
+        const count = mapHasArrayImmutable(originatedFrom, parentPeer)
+          ? mapGetArrayImmutable(originatedFrom, parentPeer)
+          : 0;
+        originatedFrom.set(parentPeer, count + 1);
+        if (count > maxCountAllowed) {
+          bucket.del(closestNode);
+          return null;
+        }
+        const parentPeerState = state.get(parentPeer);
+        if (parentPeerState) {
+          return [closestNode, parentPeer, parentPeerState[0]];
+        }
+        throw "no state for parent id";
+      }
+      const count = mapHasArrayImmutable(originatedFrom, closestNode)
+        ? mapGetArrayImmutable(originatedFrom, closestNode)
+        : 0;
+      originatedFrom.set(closestNode, count + 1);
+      if (count > maxCountAllowed) bucket.del(closestNode);
+      return null;
+    })
+      .filter((x: Item | null) => x);
     if (nodesToConnectTo.length) {
       lookups.set(target, [bucket, bucketSize, alreadyConnected]);
       return nodesToConnectTo;
@@ -169,7 +160,7 @@ export const EFFECT_updateLookup = (
     return [];
   }
   lookup[2] = setAddArrayImmutable(alreadyConnected, nodeId);
-  if (peers.has(target) || bucket.has(target)) return [];
+  if (bucketHas(peers, target) || bucketHas(bucket, target)) return [];
   const addedNodes = makeSet(
     // todo this must be split into two filters...
     nodePeers.filter((nodePeerId) =>
@@ -178,7 +169,7 @@ export const EFFECT_updateLookup = (
   );
   if (bucketHas(bucket, target)) return [[target, nodeId, nodeStateVersion]];
   bucket.del(id);
-  return bucket.closest(target, number).filter((peer: PeerId) =>
+  return closest(bucket, target, number).filter((peer: PeerId) =>
     setHasArrayImmutable(addedNodes, peer)
   ).map((peer: PeerId) => [
     peer,
