@@ -22,7 +22,6 @@ type NonterminalNode = {
   target: Uint8Array;
   left: Node;
   right: Node;
-  splittable: boolean;
 };
 
 const distance = (x: Uint8Array, y: Uint8Array) => {
@@ -33,12 +32,10 @@ const distance = (x: Uint8Array, y: Uint8Array) => {
   return distance;
 };
 
-const maskAllButNthBit = (n: number, x) => x & Math.pow(2, 7 - n % 8);
+const mask = (n: number) => Math.pow(2, 7 - n);
 
-const determineNode = (
-  bitIndex: number,
-  target: Uint8Array,
-) => !!maskAllButNthBit(target[~~(bitIndex / 8)], bitIndex);
+const determineNode = (bitIndex: number, target: Uint8Array) =>
+  !!(mask(bitIndex % 8) & target[Math.floor(bitIndex / 8)]);
 
 export const closest = (
   target: Uint8Array,
@@ -74,6 +71,9 @@ export const kBucket = (target: Uint8Array, size: number): Node => ({
   size,
 });
 
+export const addToBucket = (node: Node, element: Uint8Array) =>
+  set(element, node, 0);
+
 const set = (id: Uint8Array, node: Node, bitIndex: number): Node =>
   node.type === "terminal"
     ? (node.leafs.size < node.size
@@ -93,10 +93,13 @@ const set = (id: Uint8Array, node: Node, bitIndex: number): Node =>
         : node.left,
     });
 
+export const bucketElements = (bucket: Node) =>
+  setElements(transitiveLeafs(bucket));
+
 const transitiveLeafs = (
   node: Node,
 ): ArraySet =>
-  (node.type === "terminal")
+  node.type === "terminal"
     ? node.leafs
     : (node.left ? transitiveLeafs(node.left) : makeSet()).union(
       node.right ? transitiveLeafs(node.right) : makeSet(),
@@ -107,18 +110,17 @@ export const del = (id: Uint8Array, node: Node, bitIndex: number): Node =>
     ? { ...node, leafs: setRemoveArrayImmutable(node.leafs, id) }
     : {
       ...node,
-      left: determineNode(bitIndex, id)
-        ? del(id, node.left, bitIndex + 1)
-        : node.left,
       right: determineNode(bitIndex, id)
         ? node.right
         : del(id, node.right, bitIndex + 1),
+      left: !determineNode(bitIndex, id)
+        ? del(id, node.left, bitIndex + 1)
+        : node.left,
     };
 
 const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
   type: "nonterminal",
   target: node.target,
-  splittable: false,
   left: {
     size: node.size,
     type: "terminal",
@@ -126,7 +128,7 @@ const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
     splittable: determineNode(bitIndex, node.target),
     leafs: filterSet(
       node.leafs,
-      (id: Uint8Array) => determineNode(bitIndex, id),
+      (id: Uint8Array) => !determineNode(bitIndex, id),
     ),
   },
   right: {
@@ -136,7 +138,7 @@ const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
     splittable: !determineNode(bitIndex, node.target),
     leafs: filterSet(
       node.leafs,
-      (id: Uint8Array) => !determineNode(bitIndex, id),
+      (id: Uint8Array) => determineNode(bitIndex, id),
     ),
   },
 });
