@@ -19,6 +19,7 @@ import {
   Bucket,
   bucketAdd,
   bucketAddAll,
+  bucketHas,
   bucketRemove,
   closest,
   kBucket,
@@ -189,7 +190,7 @@ export const EFFECT_finishLookup = (
   lookups.delete(id);
   return (bucketHas(peers, id) || setHasArrayImmutable(alreadyConnected, id))
     ? [id]
-    : bucket.closest(id, number);
+    : closest(bucket, id, number);
 };
 
 const checkProofLength = (

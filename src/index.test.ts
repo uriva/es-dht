@@ -1,6 +1,5 @@
-import { ArrayMap, makeMap } from "./containers.ts";
+import { ArrayMap, makeMap, mapGetArrayImmutable } from "./containers.ts";
 import {
-  Bucket,
   DHT,
   EFFECT_commitState,
   EFFECT_finishLookup,
@@ -31,6 +30,8 @@ import {
   range,
   uint8ArraysEqual,
 } from "./utils.ts";
+
+import { Bucket } from "./kBucket.ts";
 
 const makeSimpleDHT = (id: PeerId) => makeDHT(id, 20, 1000, 0.2);
 
@@ -172,13 +173,13 @@ const response = (
 };
 
 Deno.test("es-dht", () => {
-  const idToPeer = makeMap<PeerId>();
+  const idToPeer = makeMap<DHT>([]);
   const send = (
     target: PeerId,
     source: PeerId,
     command: Command,
     data: any[],
-  ) => response(idToPeer.get(target), source, command, data);
+  ) => response(mapGetArrayImmutable(idToPeer, target), source, command, data);
   const bootsrapPeer = crypto.randomBytes(20);
   idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
   const nodes = range(100).map(() => {

@@ -4,6 +4,7 @@ import {
   makeSet,
   setAddArrayImmutable,
   setElements,
+  setHasArrayImmutable,
   setRemoveArrayImmutable,
 } from "./containers.ts";
 
@@ -80,22 +81,38 @@ export const bucketAddAll = (bucket: Node, elements: Uint8Array[]) => {
 export const bucketAdd = (node: Node, element: Uint8Array) =>
   set(element, node, 0);
 
-const set = (id: Uint8Array, node: Node, bitIndex: number): Node =>
+export const bucketHas = (node: Node, element: Uint8Array) =>
+  bucketHasInternal(node, element, 0);
+
+const bucketHasInternal = (
+  node: Node,
+  element: Uint8Array,
+  bitIndex: number,
+): boolean =>
+  node.type === "terminal"
+    ? setHasArrayImmutable(node.leafs, element)
+    : bucketHasInternal(
+      determineNode(bitIndex, element) ? node.right : node.left,
+      element,
+      bitIndex + 1,
+    );
+
+const set = (element: Uint8Array, node: Node, bitIndex: number): Node =>
   node.type === "terminal"
     ? (node.leafs.size < node.size
-      ? { ...node, leafs: setAddArrayImmutable(node.leafs, id) }
+      ? { ...node, leafs: setAddArrayImmutable(node.leafs, element) }
       : (
         node.splittable
-          ? set(id, splitNodeLeafs(bitIndex, node), bitIndex)
+          ? set(element, splitNodeLeafs(bitIndex, node), bitIndex)
           : node
       ))
     : ({
       ...node,
-      right: determineNode(bitIndex, id)
-        ? set(id, node.right, bitIndex + 1)
+      right: determineNode(bitIndex, element)
+        ? set(element, node.right, bitIndex + 1)
         : node.right,
-      left: !determineNode(bitIndex, id)
-        ? set(id, node.left, bitIndex + 1)
+      left: !determineNode(bitIndex, element)
+        ? set(element, node.left, bitIndex + 1)
         : node.left,
     });
 
