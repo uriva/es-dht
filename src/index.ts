@@ -144,7 +144,7 @@ export const EFFECT_startLookup = (
 
 export const EFFECT_updateLookup = (
   peers: Bucket,
-  lookups: ArrayMap<LookupValue>,
+  lookup: LookupValue,
   id: PeerId,
   target: HashedValue,
   nodeId: PeerId,
@@ -153,8 +153,6 @@ export const EFFECT_updateLookup = (
   // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
   nodePeers: PeerId[],
 ): Item[] => {
-  const lookup = lookups.get(target);
-  if (!lookup) return [];
   const [bucket, number, alreadyConnected] = lookup;
   if (!nodePeers) {
     bucket.del(nodeId);

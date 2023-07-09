@@ -1,4 +1,9 @@
-import { ArrayMap, makeMap, mapGetArrayImmutable } from "./containers.ts";
+import {
+  ArrayMap,
+  makeMap,
+  mapGetArrayImmutable,
+  mapHasArrayImmutable,
+} from "./containers.ts";
 import {
   DHT,
   EFFECT_commitState,
@@ -59,9 +64,10 @@ const nextNodesToConnectTo = (
   );
   const checkResult = checkStateProof(targetStateVersion, proof, target);
   if (!checkResult || !uint8ArraysEqual(checkResult, target)) throw new Error();
+  if (!mapHasArrayImmutable(lookups, target)) return [];
   return EFFECT_updateLookup(
     peers,
-    lookups,
+    mapGetArrayImmutable(lookups, target),
     id,
     infoHash,
     target,
