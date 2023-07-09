@@ -71,7 +71,7 @@ export const kBucket = (target: Uint8Array, size: number): Node => ({
   size,
 });
 
-export const addToBucket = (node: Node, element: Uint8Array) =>
+export const bucketAdd = (node: Node, element: Uint8Array) =>
   set(element, node, 0);
 
 const set = (id: Uint8Array, node: Node, bitIndex: number): Node =>
@@ -105,7 +105,10 @@ const transitiveLeafs = (
       node.right ? transitiveLeafs(node.right) : makeSet(),
     );
 
-export const del = (id: Uint8Array, node: Node, bitIndex: number): Node =>
+export const bucketRemove = (node: Node, element: Uint8Array) =>
+  del(element, node, 0);
+
+const del = (id: Uint8Array, node: Node, bitIndex: number): Node =>
   node.type === "terminal"
     ? { ...node, leafs: setRemoveArrayImmutable(node.leafs, id) }
     : {

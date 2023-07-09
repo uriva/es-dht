@@ -1,4 +1,4 @@
-import { addToBucket, bucketElements, kBucket } from "./kBucket.ts";
+import { bucketAdd, bucketElements, kBucket } from "./kBucket.ts";
 
 import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
 
@@ -11,7 +11,7 @@ Deno.test("adding an element places it in root node", () => {
   const element = randomBytesArray(arraySize);
   assertEquals(
     bucketElements(
-      addToBucket(kBucket(randomBytesArray(arraySize), k), element),
+      bucketAdd(kBucket(randomBytesArray(arraySize), k), element),
     ),
     [element],
   );
@@ -23,8 +23,8 @@ Deno.test(
     const element = randomBytesArray(arraySize);
     assertEquals(
       bucketElements(
-        addToBucket(
-          addToBucket(kBucket(randomBytesArray(arraySize), k), element),
+        bucketAdd(
+          bucketAdd(kBucket(randomBytesArray(arraySize), k), element),
           element,
         ),
       ),
@@ -38,7 +38,7 @@ Deno.test(
   () => {
     let bucket = kBucket(new Uint8Array([0x00, 0x00]), k);
     for (let j = 0; j < k + 1; ++j) {
-      bucket = addToBucket(bucket, new Uint8Array([0x80, j]));
+      bucket = bucketAdd(bucket, new Uint8Array([0x80, j]));
     }
     assertEquals(bucketElements(bucket).length, k);
   },

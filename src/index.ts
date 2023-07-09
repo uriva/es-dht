@@ -7,9 +7,13 @@ import {
   keys,
   makeMap,
   mapGetArrayImmutable,
+  mapHasArrayImmutable,
+  mapRemoveArrayImmutable,
+  mapSetArrayImmutable,
   setHasArrayImmutable,
   values,
 } from "./containers.ts";
+import { bucketAdd, bucketRemove } from "./kBucket.ts";
 import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
 
 import kBucketSync from "npm:k-bucket-sync@^0.1.3";
@@ -301,7 +305,7 @@ const getStateHelper = (
 ): [StateVersion, State] =>
   uint8ArraysEqual(stateVersion, latestState[0])
     ? latestState
-    : [stateVersion, stateCache.get(stateVersion)];
+    : [stateVersion, mapGetArrayImmutable(stateCache, stateVersion)];
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
@@ -316,7 +320,7 @@ export const getStateProof = (
     ? merkleTreeBinary.get_proof(
       reduceStateToProofItems(id, state),
       peerId,
-      hash,
+      sha1,
     )
     : new Uint8Array(0);
 };
