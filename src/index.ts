@@ -2,17 +2,17 @@ import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
   ArrayMap,
-  ArraySet,
+  arrayMapEntries,
   arrayMapGet,
-  entries,
-  keys,
-  makeMap,
-  makeSet,
-  mapHasArrayImmutable,
-  mapRemoveArrayImmutable,
-  mapSetArrayImmutable,
-  mapSizeArrayImmutable,
-  values,
+  arrayMapHas,
+  arrayMapKeys,
+  arrayMapRemove,
+  arrayMapSet,
+  arrayMapSize,
+  arrayMapValues,
+  ArraySet,
+  makeArrayMap,
+  makeArraySet,
 } from "./containers.ts";
 import {
   Bucket,
@@ -24,21 +24,20 @@ import {
   closest,
   kBucket,
 } from "./kBucket.ts";
-import { concatUint8Array, uint8ArraysEqual } from "./utils.ts";
+import { concatUint8Array, mapCat, uint8ArraysEqual } from "./utils.ts";
 
 import merkleTreeBinary from "npm:merkle-tree-binary@^0.1.0";
 
 export const sha1 = (data: any): HashedValue =>
   crypto.createHash("sha1").update(data).digest();
 
-type StateValue = [StateVersion, PeerId[]];
-type State = ArrayMap<StateValue>;
+type PeerState = [Version, PeerId[]];
+type PeerToPeerState = ArrayMap<PeerState>;
 type Proof = Uint8Array;
-export type StateVersion = ReturnType<typeof computeStateVersion>;
+export type Version = ReturnType<typeof merkleTreeBinary.get_root>;
 export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
-type VersionAndState = [StateVersion, State];
 export type LookupValue = [Bucket, number, ArraySet];
 
 export const makeDHT = <V>(
@@ -47,52 +46,54 @@ export const makeDHT = <V>(
   cacheHistorySize: number, // How many versions of local history will be kept
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
-  data: makeMap<V>([]),
+  data: makeArrayMap<V>([]),
   id,
   bucketSize,
   fractionOfNodesFromSamePeer,
   cacheHistorySize,
-  stateCache: makeMap<State>([]),
-  latestState: [
-    computeStateVersion(id, makeMap<StateValue>([])),
-    makeMap<StateValue>([]),
-  ] as VersionAndState,
+  stateCache: makeArrayMap<PeerToPeerState>([]),
+  version: computeStateVersion(id, makeArrayMap<PeerState>([])),
+  state: makeArrayMap<PeerState>([]),
   peers: kBucket(id, bucketSize),
-  lookups: makeMap<LookupValue>([]),
+  lookups: makeArrayMap<LookupValue>([]),
 });
 
 export type PeerId = Uint8Array;
 // [nodeId, parentPeerId, parentPeerStateVersion]
-export type Item = [PeerId, PeerId, StateVersion];
+export type Item = [PeerId, PeerId, Version];
 
-const parenthood = (state: State) => {
+const parenthood = (state: PeerToPeerState) => {
   const parents: [PeerId, PeerId][] = [];
-  entries(state).forEach(([peerId, [_, peerPeers]]) => {
+  arrayMapEntries(state).forEach(([peerId, [_, peerPeers]]) => {
     for (const peerPeerId of peerPeers) {
       parents.push([peerPeerId, peerId]);
     }
   });
-  return makeMap<PeerId>(parents);
+  return makeArrayMap<PeerId>(parents);
 };
 
-const getBucket = (bucketSize: number, state: State, target: PeerId) => {
-  let bucket = bucketAddAll(kBucket(target, bucketSize), keys(state));
-  values(state).forEach(([, peerPeers]) => {
+const getBucket = (
+  bucketSize: number,
+  state: PeerToPeerState,
+  target: PeerId,
+) => {
+  let bucket = bucketAddAll(kBucket(target, bucketSize), arrayMapKeys(state));
+  arrayMapValues(state).forEach(([, peerPeers]) => {
     bucket = bucketAddAll(bucket, peerPeers);
   });
   return bucket;
 };
 
 export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
-  const { id, lookups, bucketSize, peers, latestState } = d;
+  const { id, lookups, bucketSize, peers, state } = d;
   if (bucketHas(peers, target)) return [d, []];
-  const bucket = getBucket(bucketSize, latestState[1], target);
-  const alreadyConnected = makeSet(keys(latestState[1]));
-  const parents = parenthood(latestState[1]);
+  const bucket = getBucket(bucketSize, state, target);
+  const alreadyConnected = makeArraySet(arrayMapKeys(state));
+  const parents = parenthood(state);
   if (bucketHas(bucket, target)) {
     return [{
       ...d,
-      lookups: mapSetArrayImmutable(lookups, target, [
+      lookups: arrayMapSet(lookups, target, [
         bucket,
         bucketSize,
         alreadyConnected,
@@ -100,10 +101,7 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
     }, [[
       target,
       arrayMapGet<PeerId>(parents, target),
-      arrayMapGet<StateValue>(
-        latestState[1],
-        arrayMapGet<PeerId>(parents, target),
-      )[0],
+      arrayMapGet<PeerState>(state, arrayMapGet<PeerId>(parents, target))[0],
     ]]];
   }
   let modifiedBucket = bucketRemove(bucket, id);
@@ -114,17 +112,16 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
   );
   while (true) {
     const closestSoFar = closest(modifiedBucket, target, bucketSize);
-    let originatedFrom = makeMap<number>([]);
+    let originatedFrom = makeArrayMap<number>([]);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
-    const state = latestState[1];
     const nodesToConnectTo = closestSoFar
       .map((closestNode: PeerId) => {
-        if (mapHasArrayImmutable(parents, closestNode)) {
+        if (arrayMapHas(parents, closestNode)) {
           const parentPeer = arrayMapGet(parents, closestNode);
-          const count = mapHasArrayImmutable(originatedFrom, parentPeer)
+          const count = arrayMapHas(originatedFrom, parentPeer)
             ? arrayMapGet(originatedFrom, parentPeer)
             : 0;
-          originatedFrom = mapSetArrayImmutable(
+          originatedFrom = arrayMapSet(
             originatedFrom,
             parentPeer,
             count + 1,
@@ -139,10 +136,10 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
           }
           throw "no state for parent id";
         }
-        const count = mapHasArrayImmutable(originatedFrom, closestNode)
+        const count = arrayMapHas(originatedFrom, closestNode)
           ? arrayMapGet(originatedFrom, closestNode)
           : 0;
-        originatedFrom = mapSetArrayImmutable(
+        originatedFrom = arrayMapSet(
           originatedFrom,
           closestNode,
           count + 1,
@@ -155,7 +152,7 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
     if (nodesToConnectTo.length) {
       return [{
         ...d,
-        lookups: mapSetArrayImmutable(lookups, target, [
+        lookups: arrayMapSet(lookups, target, [
           modifiedBucket,
           bucketSize,
           alreadyConnected,
@@ -201,11 +198,11 @@ const checkProofLength = (
 export const setPeer = (
   d: DHT,
   peerId: PeerId,
-  peerStateVersion: StateVersion,
+  peerStateVersion: Version,
   proof: Proof,
   neighbors: PeerId[],
 ): DHT | undefined => {
-  const { id, peers, latestState, ...rest } = d;
+  const { id, peers, state, ...rest } = d;
   if (
     uint8ArraysEqual(id, peerId) ||
     !checkProofLength(id.length + 1, peerId, proof, neighbors.length)
@@ -213,7 +210,7 @@ export const setPeer = (
   const detectedPeer = checkStateProof(peerStateVersion, proof, peerId);
   if (!detectedPeer || !uint8ArraysEqual(detectedPeer, peerId)) return;
   if (bucketHas(peers, peerId)) return d;
-  const state = mapSetArrayImmutable<StateValue>(latestState[1], peerId, [
+  const newState = arrayMapSet<PeerState>(state, peerId, [
     peerStateVersion,
     neighbors,
   ]);
@@ -221,33 +218,38 @@ export const setPeer = (
     ...rest,
     id,
     peers: bucketAdd(peers, peerId),
-    latestState: [computeStateVersion(id, state), state],
+    version: computeStateVersion(id, newState),
+    state: newState,
   };
 };
 
 export const deletePeer = (d: DHT, peerId: PeerId): DHT => {
-  const { latestState, peers, id } = d;
-  if (!mapHasArrayImmutable(latestState[1], peerId)) return d;
-  const newState = mapRemoveArrayImmutable(latestState[1], peerId);
+  const { state, peers, id } = d;
+  if (!arrayMapHas(state, peerId)) return d;
+  const newState = arrayMapRemove(state, peerId);
   return {
     ...d,
     peers: bucketRemove(peers, peerId),
-    latestState: [computeStateVersion(id, newState), newState],
+    version: computeStateVersion(id, newState),
+    state: newState,
     id,
   };
 };
 
 export const getState = (
-  { latestState, stateCache, id }: DHT,
-  stateVersion: StateVersion | null,
-): [StateVersion, Proof, PeerId[]] => {
-  const [stateVersion2, state] = stateVersion
-    ? getStateHelper(latestState, stateCache, stateVersion)
-    : latestState;
+  d: DHT,
+  stateVersion: Version | null,
+): [Version, Proof, PeerId[]] => {
+  const { version, state, stateCache, id } = d;
+  const [stateVersion2, newState] = stateVersion
+    ? (uint8ArraysEqual(stateVersion, version)
+      ? [version, state]
+      : [stateVersion, arrayMapGet(stateCache, stateVersion)])
+    : [version, state];
   return [
     stateVersion2,
-    getStateProof(latestState, stateCache, id, stateVersion2, id),
-    keys(state),
+    getStateProof(d, stateVersion2, id),
+    arrayMapKeys(newState),
   ];
 };
 
@@ -256,53 +258,40 @@ export const getState = (
 // This allows to only store useful state versions in cache known to other peers
 // and discard the rest.
 export const commitState = (d: DHT): DHT => {
-  const { cacheHistorySize, stateCache, latestState } = d;
-  const [key, value] = latestState;
-  if (mapHasArrayImmutable(stateCache, key)) return d;
-  const newStateCache = mapSetArrayImmutable(stateCache, key, value);
+  const { cacheHistorySize, stateCache, version, state } = d;
+  if (arrayMapHas(stateCache, version)) return d;
+  const newStateCache = arrayMapSet(stateCache, version, state);
   return {
     ...d,
-    stateCache: mapSizeArrayImmutable(newStateCache) > cacheHistorySize
-      ? mapRemoveArrayImmutable(newStateCache, keys(newStateCache)[0])
+    stateCache: arrayMapSize(newStateCache) > cacheHistorySize
+      ? arrayMapRemove(newStateCache, arrayMapKeys(newStateCache)[0])
       : newStateCache,
   };
 };
 
-const getStateHelper = (
-  latestState: [StateVersion, State],
-  stateCache: ArrayMap<State>,
-  stateVersion: StateVersion,
-): [StateVersion, State] =>
-  uint8ArraysEqual(stateVersion, latestState[0])
-    ? latestState
-    : [stateVersion, arrayMapGet(stateCache, stateVersion)];
-
 // Generate proof about peer in current state version.
 export const getStateProof = (
-  latestState: [StateVersion, State],
-  stateCache: ArrayMap<State>,
-  id: PeerId,
-  stateVersion: StateVersion,
+  d: DHT,
+  stateVersion: Version,
   peerId: PeerId,
 ): Proof => {
-  const [_, state] = getStateHelper(latestState, stateCache, stateVersion);
-  return (mapHasArrayImmutable(state, peerId) || uint8ArraysEqual(peerId, id))
-    ? merkleTreeBinary.get_proof(
-      reduceStateToProofItems(id, state),
-      peerId,
-      sha1,
-    )
+  const { version, state, stateCache, id } = d;
+  const newState = uint8ArraysEqual(stateVersion, version)
+    ? state
+    : arrayMapGet(stateCache, stateVersion);
+  return (arrayMapHas(newState, peerId) ||
+      uint8ArraysEqual(peerId, id))
+    ? merkleTreeBinary.get_proof(stateToProofItems(id, newState), peerId, sha1)
     : new Uint8Array(0);
 };
 
-const reduceStateToProofItems = (
+const stateToProofItems = (
   id: PeerId,
-  state: State,
-): (PeerId | StateVersion)[] => {
-  const items = [];
-  entries(state).forEach(([peerId, [peerStateVersion]]) => {
-    items.push(peerId, peerStateVersion);
-  });
+  state: PeerToPeerState,
+): (PeerId | Version)[] => {
+  const items = mapCat<[PeerId, PeerState], PeerId | Version>((
+    [peerId, [peerStateVersion]],
+  ) => [peerId, peerStateVersion])(arrayMapEntries(state));
   items.push(id, id);
   return items;
 };
@@ -319,6 +308,5 @@ export const checkStateProof = (
 
 const computeStateVersion = (
   id: PeerId,
-  newState: State,
-): ReturnType<typeof merkleTreeBinary.get_root> =>
-  merkleTreeBinary.get_root(reduceStateToProofItems(id, newState), sha1);
+  newState: PeerToPeerState,
+): Version => merkleTreeBinary.get_root(stateToProofItems(id, newState), sha1);

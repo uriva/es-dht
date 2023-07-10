@@ -1,11 +1,11 @@
 import {
   ArraySet,
-  filterSet,
-  makeSet,
-  setAddArrayImmutable,
-  setElements,
-  setHasArrayImmutable,
-  setRemoveArrayImmutable,
+  arraySetAdd,
+  arraySetElements,
+  arraySetFilter,
+  arraySetHas,
+  arraySetRemove,
+  makeArraySet,
 } from "./containers.ts";
 
 type Node = TerminalNode | NonterminalNode;
@@ -54,7 +54,7 @@ export const closest = (
         nodesToCheck.push(node.left, node.right);
       } else nodesToCheck.push(node.right, node.left);
     } else {
-      results = results.concat(setElements(node.leafs));
+      results = results.concat(arraySetElements(node.leafs));
     }
   }
   return results
@@ -67,7 +67,7 @@ export const closest = (
 export const kBucket = (target: Uint8Array, size: number): Node => ({
   target,
   splittable: true,
-  leafs: makeSet([]),
+  leafs: makeArraySet([]),
   type: "terminal",
   size,
 });
@@ -90,7 +90,7 @@ const bucketHasInternal = (
   bitIndex: number,
 ): boolean =>
   node.type === "terminal"
-    ? setHasArrayImmutable(node.leafs, element)
+    ? arraySetHas(node.leafs, element)
     : bucketHasInternal(
       determineNode(bitIndex, element) ? node.right : node.left,
       element,
@@ -100,7 +100,7 @@ const bucketHasInternal = (
 const set = (element: Uint8Array, node: Node, bitIndex: number): Node =>
   node.type === "terminal"
     ? (node.leafs.size < node.size
-      ? { ...node, leafs: setAddArrayImmutable(node.leafs, element) }
+      ? { ...node, leafs: arraySetAdd(node.leafs, element) }
       : (
         node.splittable
           ? set(element, splitNodeLeafs(bitIndex, node), bitIndex)
@@ -117,15 +117,15 @@ const set = (element: Uint8Array, node: Node, bitIndex: number): Node =>
     });
 
 export const bucketElements = (bucket: Node) =>
-  setElements(transitiveLeafs(bucket));
+  arraySetElements(transitiveLeafs(bucket));
 
 const transitiveLeafs = (
   node: Node,
 ): ArraySet =>
   node.type === "terminal"
     ? node.leafs
-    : (node.left ? transitiveLeafs(node.left) : makeSet([])).union(
-      node.right ? transitiveLeafs(node.right) : makeSet([]),
+    : (node.left ? transitiveLeafs(node.left) : makeArraySet([])).union(
+      node.right ? transitiveLeafs(node.right) : makeArraySet([]),
     );
 
 export const bucketRemove = (node: Node, element: Uint8Array) =>
@@ -133,7 +133,7 @@ export const bucketRemove = (node: Node, element: Uint8Array) =>
 
 const del = (id: Uint8Array, node: Node, bitIndex: number): Node =>
   node.type === "terminal"
-    ? { ...node, leafs: setRemoveArrayImmutable(node.leafs, id) }
+    ? { ...node, leafs: arraySetRemove(node.leafs, id) }
     : {
       ...node,
       right: determineNode(bitIndex, id)
@@ -152,7 +152,7 @@ const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
     type: "terminal",
     target: node.target,
     splittable: determineNode(bitIndex, node.target),
-    leafs: filterSet(
+    leafs: arraySetFilter(
       node.leafs,
       (id: Uint8Array) => !determineNode(bitIndex, id),
     ),
@@ -162,7 +162,7 @@ const splitNodeLeafs = (bitIndex: number, node: TerminalNode): Node => ({
     type: "terminal",
     target: node.target,
     splittable: !determineNode(bitIndex, node.target),
-    leafs: filterSet(
+    leafs: arraySetFilter(
       node.leafs,
       (id: Uint8Array) => determineNode(bitIndex, id),
     ),

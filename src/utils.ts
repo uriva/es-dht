@@ -1,6 +1,6 @@
 const randomInteger = (n: number) => Math.floor(n * Math.random());
 
-export const randomElement = <T>(arr: T[]): T => arr[randomInteger(arr.length)];
+export const choice = <T>(arr: T[]): T => arr[randomInteger(arr.length)];
 
 export const range = (n: number) => {
   const result = [];
@@ -35,3 +35,6 @@ export const concatUint8Array = (x: Uint8Array, y: Uint8Array): Uint8Array => {
 };
 
 export const last = <T>(arr: T[]) => arr[arr.length - 1];
+
+export const randomBytesArray = (n: number) =>
+  crypto.getRandomValues(new Uint8Array(n));

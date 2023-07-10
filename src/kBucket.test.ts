@@ -2,8 +2,6 @@ import { bucketAdd, bucketElements, kBucket } from "./kBucket.ts";
 
 import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
 
-const randomBytesArray = (n: number) =>
-  crypto.getRandomValues(new Uint8Array(n));
 const arraySize = 2;
 const k = 20;
 
