@@ -8,8 +8,8 @@ import {
   makeArrayMap,
 } from "./containers.ts";
 import {
+  cacheState,
   checkStateProof,
-  commitState,
   deletePeer,
   DHT,
   getState,
@@ -148,8 +148,8 @@ const response = (
 ): any => {
   if (command === "bootstrap") {
     const result = setPeer(instance, source_id, data[0], data[1], data[2]);
-    return (result)
-      ? [commitState(result), getState(instance, null)]
+    return result
+      ? [cacheState(result), getState(instance, null)]
       : [instance, null];
   }
   if (command === "get") return instance.data.get(data) || null;
@@ -181,7 +181,7 @@ Deno.test("es-dht", () => {
     const id = randomBytesArray(20);
     let x = makeSimpleDHT(id);
     const state = send(bootsrapPeer, id, "bootstrap", getState(x, null));
-    x = commitState(x);
+    x = cacheState(x);
     idToPeer = arrayMapSet(idToPeer, id, x);
     if (state) {
       const [stateVersion, proof, peers] = state;

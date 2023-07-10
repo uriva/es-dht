@@ -2,6 +2,7 @@ import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 
 import {
   ArrayMap,
+  ArraySet,
   arrayMapEntries,
   arrayMapGet,
   arrayMapHas,
@@ -10,7 +11,6 @@ import {
   arrayMapSet,
   arrayMapSize,
   arrayMapValues,
-  ArraySet,
   makeArrayMap,
   makeArraySet,
 } from "./containers.ts";
@@ -43,15 +43,15 @@ export type LookupValue = [Bucket, number, ArraySet];
 export const makeDHT = <V>(
   id: PeerId,
   bucketSize: number,
-  cacheHistorySize: number, // How many versions of local history will be kept
+  maxCacheSize: number,
   fractionOfNodesFromSamePeer: number, // Max fraction of nodes originated from single peer allowed on lookup start, e.g. 0.2
 ) => ({
   data: makeArrayMap<V>([]),
   id,
   bucketSize,
   fractionOfNodesFromSamePeer,
-  cacheHistorySize,
-  stateCache: makeArrayMap<PeerToPeerState>([]),
+  maxCacheSize,
+  cache: makeArrayMap<PeerToPeerState>([]),
   version: computeStateVersion(id, makeArrayMap<PeerState>([])),
   state: makeArrayMap<PeerState>([]),
   peers: kBucket(id, bucketSize),
@@ -240,11 +240,11 @@ export const getState = (
   d: DHT,
   stateVersion: Version | null,
 ): [Version, Proof, PeerId[]] => {
-  const { version, state, stateCache, id } = d;
+  const { version, state, cache, id } = d;
   const [stateVersion2, newState] = stateVersion
     ? (uint8ArraysEqual(stateVersion, version)
       ? [version, state]
-      : [stateVersion, arrayMapGet(stateCache, stateVersion)])
+      : [stateVersion, arrayMapGet(cache, stateVersion)])
     : [version, state];
   return [
     stateVersion2,
@@ -253,19 +253,18 @@ export const getState = (
   ];
 };
 
-// Commit current state into state history.
+// Commit current state into cache.
 // Needs to be called if current state was sent to any peer.
 // This allows to only store useful state versions in cache known to other peers
 // and discard the rest.
-export const commitState = (d: DHT): DHT => {
-  const { cacheHistorySize, stateCache, version, state } = d;
-  if (arrayMapHas(stateCache, version)) return d;
-  const newStateCache = arrayMapSet(stateCache, version, state);
+export const cacheState = (d: DHT): DHT => {
+  const { maxCacheSize, cache, version, state } = d;
+  const newCache = arrayMapSet(cache, version, state);
   return {
     ...d,
-    stateCache: arrayMapSize(newStateCache) > cacheHistorySize
-      ? arrayMapRemove(newStateCache, arrayMapKeys(newStateCache)[0])
-      : newStateCache,
+    cache: arrayMapSize(newCache) > maxCacheSize
+      ? arrayMapRemove(newCache, arrayMapKeys(newCache)[0])
+      : newCache,
   };
 };
 
@@ -275,10 +274,10 @@ export const getStateProof = (
   stateVersion: Version,
   peerId: PeerId,
 ): Proof => {
-  const { version, state, stateCache, id } = d;
+  const { version, state, cache, id } = d;
   const newState = uint8ArraysEqual(stateVersion, version)
     ? state
-    : arrayMapGet(stateCache, stateVersion);
+    : arrayMapGet(cache, stateVersion);
   return (arrayMapHas(newState, peerId) ||
       uint8ArraysEqual(peerId, id))
     ? merkleTreeBinary.get_proof(stateToProofItems(id, newState), peerId, sha1)
