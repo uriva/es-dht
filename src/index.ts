@@ -11,6 +11,7 @@ import {
   mapHasArrayImmutable,
   mapRemoveArrayImmutable,
   mapSetArrayImmutable,
+  mapSizeArrayImmutable,
   setAddArrayImmutable,
   setHasArrayImmutable,
   values,
@@ -19,6 +20,7 @@ import {
   Bucket,
   bucketAdd,
   bucketAddAll,
+  bucketElements,
   bucketHas,
   bucketRemove,
   closest,
@@ -104,15 +106,18 @@ export const EFFECT_startLookup = (
     ]];
   }
   bucket.del(id);
-  const maxFraction = Math.max(fractionOfNodesFromSamePeer, 1 / peers.count());
+  const maxFraction = Math.max(
+    fractionOfNodesFromSamePeer,
+    1 / bucketElements(peers).length,
+  );
   while (true) {
     const closestSoFar = closest(bucket, target, bucketSize);
     const originatedFrom = makeMap<number>([]);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
     const state = latestState[1];
-    const nodesToConnectTo = closestSoFar.map((closestNodeId: PeerId) => {
+    const nodesToConnectTo = closestSoFar.map((closestNode: PeerId) => {
       if (mapHasArrayImmutable(parents, closestNode)) {
-        const parentPeer = mapGetArrayImmutable(parents, closestNodeId);
+        const parentPeer = mapGetArrayImmutable(parents, closestNode);
         const count = mapHasArrayImmutable(originatedFrom, parentPeer)
           ? mapGetArrayImmutable(originatedFrom, parentPeer)
           : 0;
@@ -177,20 +182,6 @@ export const EFFECT_updateLookup = (
   ]);
 };
 
-// Returns `[id]` if node with specified ID was connected directly,
-// an array of closest IDs if exact node wasn't found and `null` otherwise.
-export const EFFECT_finishLookup = (
-  lookups: ArrayMap<LookupValue>,
-  peers: Bucket,
-  id: PeerId,
-): PeerId[] => {
-  const [bucket, number, alreadyConnected] = mapGetArrayImmutable(lookups, id);
-  lookups.delete(id);
-  return (bucketHas(peers, id) || setHasArrayImmutable(alreadyConnected, id))
-    ? [id]
-    : closest(bucket, id, number);
-};
-
 const checkProofLength = (
   proofBlockSize: number,
   peerId: PeerId,
@@ -252,16 +243,15 @@ export const setPeer = (
   };
 };
 
-// TODO: propagate effects of this being immutable.
 export const deletePeer = (d: DHT, peerId: PeerId): DHT => {
-  const { latestState, peers, id, ...rest } = d;
+  const { latestState, peers, id } = d;
   if (!mapHasArrayImmutable(latestState[1], peerId)) return d;
   const newState = mapRemoveArrayImmutable(latestState[1], peerId);
   return {
+    ...d,
     peers: bucketRemove(peers, peerId),
     latestState: [computeStateVersion(id, newState), newState],
     id,
-    ...rest,
   };
 };
 
@@ -283,15 +273,17 @@ export const getState = (
 // Needs to be called if current state was sent to any peer.
 // This allows to only store useful state versions in cache known to other peers
 // and discard the rest.
-export const EFFECT_commitState = (
-  size: number,
-  stateCache: ArrayMap<State>,
-  latestState: [StateVersion, State],
-) => {
+export const commitState = (d: DHT): DHT => {
+  const { cacheHistorySize, stateCache, latestState } = d;
   const [key, value] = latestState;
-  if (stateCache.has(key)) return;
-  stateCache.set(key, value);
-  if (stateCache.size > size) stateCache.delete(stateCache.keys().next().value);
+  if (mapHasArrayImmutable(stateCache, key)) return d;
+  const newStateCache = mapSetArrayImmutable(stateCache, key, value);
+  return {
+    ...d,
+    stateCache: mapSizeArrayImmutable(newStateCache) > cacheHistorySize
+      ? mapRemoveArrayImmutable(newStateCache, keys(newStateCache)[0])
+      : newStateCache,
+  };
 };
 
 const getStateHelper = (

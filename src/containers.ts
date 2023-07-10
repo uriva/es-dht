@@ -1,4 +1,4 @@
-import { Map as ImmutableMap, Set as ImmutableSet, hash } from "npm:immutable";
+import { Map as ImmutableMap, Set as ImmutableSet } from "npm:immutable";
 
 const arrayToKey = (arr: Uint8Array) => arr.join(",");
 const keyToArray = (key: string) => new Uint8Array(key.split(",").map(Number));
@@ -61,3 +61,5 @@ export const filterSet = (set: ArraySet, logic: (x: Uint8Array) => boolean) =>
   set.filter((x) => logic(keyToArray(x)));
 
 export const setElements = (set: ArraySet) => Array.from(set).map(keyToArray);
+
+export const mapSizeArrayImmutable = <V>(x: ArrayMap<V>) => x.size;

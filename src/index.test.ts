@@ -3,11 +3,13 @@ import {
   makeMap,
   mapGetArrayImmutable,
   mapHasArrayImmutable,
+  mapRemoveArrayImmutable,
+  mapSetArrayImmutable,
+  setHasArrayImmutable,
 } from "./containers.ts";
+import { Bucket, bucketHas, closest } from "./kBucket.ts";
 import {
   DHT,
-  EFFECT_commitState,
-  EFFECT_finishLookup,
   EFFECT_startLookup,
   EFFECT_updateLookup,
   HashedValue,
@@ -16,6 +18,7 @@ import {
   PeerId,
   StateVersion,
   checkStateProof,
+  commitState,
   deletePeer,
   getState,
   getStateProof,
@@ -35,8 +38,6 @@ import {
   range,
   uint8ArraysEqual,
 } from "./utils.ts";
-
-import { Bucket } from "./kBucket.ts";
 
 const makeSimpleDHT = (id: PeerId) => makeDHT(id, 20, 1000, 0.2);
 
@@ -76,6 +77,7 @@ const nextNodesToConnectTo = (
   );
 };
 
+// TODO propagate return value change (used to only return PeerId[])
 const lookup = (send: Send) =>
 (
   id: PeerId,
@@ -83,9 +85,9 @@ const lookup = (send: Send) =>
   lookups: ArrayMap<LookupValue>,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
-): PeerId[] =>
-  nodesToConnectTo.length
-    ? lookup(send)(
+): [ArrayMap<LookupValue>, PeerId[]] => {
+  if (nodesToConnectTo.length) {
+    return lookup(send)(
       id,
       peers,
       lookups,
@@ -93,8 +95,19 @@ const lookup = (send: Send) =>
       mapCat(nextNodesToConnectTo(send, infoHash, id, peers, lookups))(
         nodesToConnectTo,
       ),
-    )
-    : EFFECT_finishLookup(lookups, peers, infoHash);
+    );
+  }
+  const [bucket, number, alreadyConnected] = mapGetArrayImmutable(
+    lookups,
+    infoHash,
+  );
+  const isConnectedDirectly = bucketHas(peers, infoHash) ||
+    setHasArrayImmutable(alreadyConnected, infoHash);
+  return [
+    mapRemoveArrayImmutable(lookups, infoHash),
+    isConnectedDirectly ? [infoHash] : closest(bucket, infoHash, number),
+  ];
+};
 
 type Send = (
   recipient: PeerId,
@@ -179,7 +192,7 @@ const response = (
 };
 
 Deno.test("es-dht", () => {
-  const idToPeer = makeMap<DHT>([]);
+  let idToPeer = makeMap<DHT>([]);
   const send = (
     target: PeerId,
     source: PeerId,
@@ -190,10 +203,10 @@ Deno.test("es-dht", () => {
   idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
   const nodes = range(100).map(() => {
     const id = crypto.randomBytes(20);
-    const x = makeSimpleDHT(id);
-    idToPeer.set(id, x);
+    let x = makeSimpleDHT(id);
     const state = send(bootsrapPeer, id, "bootstrap", getState(x, null));
-    EFFECT_commitState(x.cacheHistorySize, x.stateCache, x.latestState);
+    x = commitState(x);
+    idToPeer = mapSetArrayImmutable(idToPeer, id, x);
     if (state) {
       const [stateVersion, proof, peers] = state;
       setPeer(x, bootsrapPeer, stateVersion, proof, peers);
@@ -211,7 +224,6 @@ Deno.test("es-dht", () => {
   const infoHash = crypto.randomBytes(20);
   const lookupNodes = lookup(send)(
     alice.id,
-    alice.hash,
     alice.peers,
     alice.lookups,
     infoHash,
@@ -221,5 +233,5 @@ Deno.test("es-dht", () => {
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  deletePeer(alice, last(getState(alice, null)[2]));
+  deletePeer(alice, last(getState(alice, null)[2])); // Just check it works fine, do nothing with result.
 });
