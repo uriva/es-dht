@@ -10,7 +10,6 @@ import {
 import { Bucket, bucketHas, closest } from "./kBucket.ts";
 import {
   DHT,
-  EFFECT_startLookup,
   EFFECT_updateLookup,
   HashedValue,
   Item,
@@ -25,6 +24,7 @@ import {
   makeDHT,
   setPeer,
   sha1,
+  startLookup,
 } from "../src/index.ts";
 import {
   assert,
@@ -80,17 +80,14 @@ const nextNodesToConnectTo = (
 // TODO propagate return value change (used to only return PeerId[])
 const lookup = (send: Send) =>
 (
-  id: PeerId,
-  peers: Bucket,
-  lookups: ArrayMap<LookupValue>,
+  d: DHT,
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
 ): [ArrayMap<LookupValue>, PeerId[]] => {
+  const { id, peers, lookups } = d;
   if (nodesToConnectTo.length) {
     return lookup(send)(
-      id,
-      peers,
-      lookups,
+      d,
       infoHash,
       mapCat(nextNodesToConnectTo(send, infoHash, id, peers, lookups))(
         nodesToConnectTo,
@@ -116,32 +113,22 @@ type Send = (
   args: any,
 ) => any;
 
+// todo: propagate change in newDHT
 const put = (send: Send) => (dht: DHT, data: any): HashedValue => {
   const infoHash = sha1(data);
   dht.data.set(infoHash, data);
-  lookup(send)(
-    dht.id,
-    dht.peers,
-    dht.lookups,
-    infoHash,
-    EFFECT_startLookup(dht, infoHash),
-  ).forEach((
-    element,
-  ) => send(element, dht.id, "put", data));
+  const [newDht, items] = startLookup(dht, infoHash);
+  lookup(send)(newDht, infoHash, items).forEach((element) =>
+    send(element, dht.id, "put", data)
+  );
   return infoHash;
 };
 
 const get = (send: Send) => (dht: DHT, infoHash: HashedValue) => {
   if (dht.data.has(infoHash)) return dht.data.get(infoHash);
-  for (
-    const element of lookup(send)(
-      dht.id,
-      dht.peers,
-      dht.lookups,
-      infoHash,
-      EFFECT_startLookup(dht, infoHash),
-    )
-  ) {
+  // todo propagate change in newDht
+  const [newDht, items] = startLookup(dht, infoHash);
+  for (const element of lookup(send)(newDht, infoHash, items)) {
     const data = send(element, dht.id, "get", infoHash);
     if (data) return data;
   }
@@ -214,7 +201,7 @@ Deno.test("es-dht", () => {
     return id;
   });
   const [alice, bob, carol] = range(3).map(() =>
-    idToPeer.get(randomElement(nodes))
+    mapGetArrayImmutable(idToPeer, randomElement(nodes))
   );
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);
@@ -222,16 +209,12 @@ Deno.test("es-dht", () => {
     assertEquals(get(send)(peer, infohash), data);
   }
   const infoHash = crypto.randomBytes(20);
-  const lookupNodes = lookup(send)(
-    alice.id,
-    alice.peers,
-    alice.lookups,
-    infoHash,
-    EFFECT_startLookup(alice, infoHash),
-  );
+  const [newAlice, items] = startLookup(alice, infoHash);
+  idToPeer = mapSetArrayImmutable(idToPeer, newAlice.id, newAlice);
+  const lookupNodes = lookup(send)(newAlice, infoHash, items);
   assert(lookupNodes);
   assert(lookupNodes.length >= 2 && lookupNodes.length <= 20);
   assertInstanceOf(lookupNodes[0], Uint8Array);
   assertEquals(lookupNodes[0].length, 20);
-  deletePeer(alice, last(getState(alice, null)[2])); // Just check it works fine, do nothing with result.
+  deletePeer(newAlice, last(getState(newAlice, null)[2])); // Just check it works fine, do nothing with result.
 });

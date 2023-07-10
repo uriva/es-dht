@@ -85,64 +85,85 @@ const getBucket = (bucketSize: number, state: State, target: PeerId) => {
   return bucket;
 };
 
-export const EFFECT_startLookup = (
-  { id, lookups, fractionOfNodesFromSamePeer, bucketSize, peers, latestState }:
-    DHT,
-  target: PeerId,
-): Item[] => {
-  if (bucketHas(peers, target)) return [];
+export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
+  const { id, lookups, bucketSize, peers, latestState } = d;
+  if (bucketHas(peers, target)) return [d, []];
   const bucket = getBucket(bucketSize, latestState[1], target);
   const alreadyConnected = makeSet(keys(latestState[1]));
   const parents = parenthood(latestState[1]);
   if (bucketHas(bucket, target)) {
-    lookups.set(target, [bucket, bucketSize, alreadyConnected]);
-    return [[
+    return [{
+      ...d,
+      lookups: mapSetArrayImmutable(lookups, target, [
+        bucket,
+        bucketSize,
+        alreadyConnected,
+      ]),
+    }, [[
       target,
       mapGetArrayImmutable<PeerId>(parents, target),
       mapGetArrayImmutable<StateValue>(
         latestState[1],
         mapGetArrayImmutable<PeerId>(parents, target),
       )[0],
-    ]];
+    ]]];
   }
-  bucket.del(id);
+  let modifiedBucket = bucketRemove(bucket, id);
   const maxFraction = Math.max(
-    fractionOfNodesFromSamePeer,
+    d.fractionOfNodesFromSamePeer,
+    // TODO optimize
     1 / bucketElements(peers).length,
   );
   while (true) {
-    const closestSoFar = closest(bucket, target, bucketSize);
-    const originatedFrom = makeMap<number>([]);
+    const closestSoFar = closest(modifiedBucket, target, bucketSize);
+    let originatedFrom = makeMap<number>([]);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
     const state = latestState[1];
-    const nodesToConnectTo = closestSoFar.map((closestNode: PeerId) => {
-      if (mapHasArrayImmutable(parents, closestNode)) {
-        const parentPeer = mapGetArrayImmutable(parents, closestNode);
-        const count = mapHasArrayImmutable(originatedFrom, parentPeer)
-          ? mapGetArrayImmutable(originatedFrom, parentPeer)
+    const nodesToConnectTo: Item[] = closestSoFar
+      .map((closestNode: PeerId) => {
+        if (mapHasArrayImmutable(parents, closestNode)) {
+          const parentPeer = mapGetArrayImmutable(parents, closestNode);
+          const count = mapHasArrayImmutable(originatedFrom, parentPeer)
+            ? mapGetArrayImmutable(originatedFrom, parentPeer)
+            : 0;
+          originatedFrom = mapSetArrayImmutable(
+            originatedFrom,
+            parentPeer,
+            count + 1,
+          );
+          if (count > maxCountAllowed) {
+            modifiedBucket = bucketRemove(bucket, closestNode);
+            return null;
+          }
+          const parentPeerState = mapGetArrayImmutable(state, parentPeer);
+          if (parentPeerState) {
+            return [closestNode, parentPeer, parentPeerState[0]];
+          }
+          throw "no state for parent id";
+        }
+        const count = mapHasArrayImmutable(originatedFrom, closestNode)
+          ? mapGetArrayImmutable(originatedFrom, closestNode)
           : 0;
-        originatedFrom.set(parentPeer, count + 1);
+        originatedFrom = mapSetArrayImmutable(
+          originatedFrom,
+          closestNode,
+          count + 1,
+        );
         if (count > maxCountAllowed) {
-          bucket.del(closestNode);
-          return null;
+          modifiedBucket = bucketRemove(bucket, closestNode);
         }
-        const parentPeerState = state.get(parentPeer);
-        if (parentPeerState) {
-          return [closestNode, parentPeer, parentPeerState[0]];
-        }
-        throw "no state for parent id";
-      }
-      const count = mapHasArrayImmutable(originatedFrom, closestNode)
-        ? mapGetArrayImmutable(originatedFrom, closestNode)
-        : 0;
-      originatedFrom.set(closestNode, count + 1);
-      if (count > maxCountAllowed) bucket.del(closestNode);
-      return null;
-    })
+        return null;
+      })
       .filter((x: Item | null) => x);
     if (nodesToConnectTo.length) {
-      lookups.set(target, [bucket, bucketSize, alreadyConnected]);
-      return nodesToConnectTo;
+      return [{
+        ...d,
+        lookups: mapSetArrayImmutable(lookups, target, [
+          modifiedBucket,
+          bucketSize,
+          alreadyConnected,
+        ]),
+      }, nodesToConnectTo];
     }
   }
 };
