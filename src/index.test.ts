@@ -8,21 +8,21 @@ import {
   makeArrayMap,
 } from "./containers.ts";
 import {
-  cacheState,
-  checkStateProof,
-  deletePeer,
   DHT,
-  getState,
-  getStateProof,
   HashedValue,
   Item,
   LookupValue,
-  makeDHT,
   PeerId,
+  Version,
+  cacheState,
+  checkStateProof,
+  deletePeer,
+  getState,
+  getStateProof,
+  makeDHT,
   setPeer,
   sha1,
   startLookup,
-  Version,
 } from "../src/index.ts";
 import {
   assert,

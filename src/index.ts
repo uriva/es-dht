@@ -238,19 +238,18 @@ export const deletePeer = (d: DHT, peerId: PeerId): DHT => {
 
 export const getState = (
   d: DHT,
-  stateVersion: Version | null,
+  desiredVersion: Version | null,
 ): [Version, Proof, PeerId[]] => {
   const { version, state, cache, id } = d;
-  const [stateVersion2, newState] = stateVersion
-    ? (uint8ArraysEqual(stateVersion, version)
-      ? [version, state]
-      : [stateVersion, arrayMapGet(cache, stateVersion)])
+  const [version2, newState] = desiredVersion
+    ? [
+      desiredVersion,
+      uint8ArraysEqual(desiredVersion, version)
+        ? state
+        : arrayMapGet(cache, desiredVersion),
+    ]
     : [version, state];
-  return [
-    stateVersion2,
-    getStateProof(d, stateVersion2, id),
-    arrayMapKeys(newState),
-  ];
+  return [version2, getStateProof(d, version2, id), arrayMapKeys(newState)];
 };
 
 // Commit current state into cache.
