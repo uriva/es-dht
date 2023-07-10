@@ -4,7 +4,7 @@ const arrayToKey = (arr: Uint8Array) => arr.join(",");
 const keyToArray = (key: string) => new Uint8Array(key.split(",").map(Number));
 export type ArrayMap<V> = ImmutableMap<string, V>;
 
-export const mapGetArrayImmutable = <V>(
+export const arrayMapGet = <V>(
   map: ArrayMap<V>,
   key: Uint8Array,
 ): V => {

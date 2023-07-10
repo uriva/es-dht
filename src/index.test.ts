@@ -1,13 +1,12 @@
 import {
   ArrayMap,
+  arrayMapGet,
   makeMap,
-  mapGetArrayImmutable,
   mapHasArrayImmutable,
   mapRemoveArrayImmutable,
   mapSetArrayImmutable,
   setHasArrayImmutable,
 } from "./containers.ts";
-import { Bucket, bucketHas, closest } from "./kBucket.ts";
 import {
   DHT,
   EFFECT_updateLookup,
@@ -31,6 +30,7 @@ import {
   assertEquals,
   assertInstanceOf,
 } from "https://deno.land/std@0.178.0/testing/asserts.ts";
+import { bucketHas, closest } from "./kBucket.ts";
 import {
   last,
   mapCat,
@@ -41,40 +41,40 @@ import {
 
 const makeSimpleDHT = (id: PeerId) => makeDHT(id, 20, 1000, 0.2);
 
-const nextNodesToConnectTo = (
-  send: Send,
-  infoHash: HashedValue,
-  id: PeerId,
-  peers: Bucket,
-  lookups: ArrayMap<LookupValue>,
-) =>
+const nextNodesToConnectTo = (send: Send, infoHash: HashedValue, d: DHT) =>
 (
   [target, parentId, parentStateVersion]: [PeerId, PeerId, StateVersion],
 ) => {
-  const targetStateVersion = checkStateProof(
+  const { id, peers, lookups } = d;
+  const version = checkStateProof(
     parentStateVersion,
     send(parentId, id, "get_state_proof", [target, parentStateVersion]),
     target,
   );
-  if (!targetStateVersion) throw new Error();
-  const [proof, targetNodePeers] = send(
-    target,
-    id,
-    "get_state",
-    targetStateVersion,
-  );
-  const checkResult = checkStateProof(targetStateVersion, proof, target);
+  if (!version) throw new Error();
+  const [proof, nodePeers] = send(target, id, "get_state", version);
+  const checkResult = checkStateProof(version, proof, target);
   if (!checkResult || !uint8ArraysEqual(checkResult, target)) throw new Error();
   if (!mapHasArrayImmutable(lookups, target)) return [];
-  return EFFECT_updateLookup(
-    peers,
-    mapGetArrayImmutable(lookups, target),
-    id,
-    infoHash,
-    target,
-    targetStateVersion,
-    targetNodePeers,
+  const lookup = arrayMapGet(lookups, target);
+  const [bucket, number, alreadyConnected] = lookup;
+  if (!nodePeers.length) {
+    bucket.del(target);
+    return [];
+  }
+  lookup[2] = setAddArrayImmutable(alreadyConnected, target);
+  if (bucketHas(peers, infoHash) || bucketHas(bucket, infoHash)) return [];
+  const addedNodes = makeSet(
+    // todo this must be split into two filters...
+    nodePeers.filter((nodePeerId) =>
+      !bucketHas(bucket, nodePeerId) && bucket.set(nodePeerId)
+    ),
   );
+  if (bucketHas(bucket, infoHash)) return [[infoHash, target, version]];
+  bucket.del(id);
+  return closest(bucket, infoHash, number).filter((peer: PeerId) =>
+    setHasArrayImmutable(addedNodes, peer)
+  ).map((peer: PeerId) => [peer, target, version]);
 };
 
 // TODO propagate return value change (used to only return PeerId[])
@@ -84,20 +84,15 @@ const lookup = (send: Send) =>
   infoHash: HashedValue,
   nodesToConnectTo: Item[],
 ): [ArrayMap<LookupValue>, PeerId[]] => {
-  const { id, peers, lookups } = d;
+  const { peers, lookups } = d;
   if (nodesToConnectTo.length) {
     return lookup(send)(
       d,
       infoHash,
-      mapCat(nextNodesToConnectTo(send, infoHash, id, peers, lookups))(
-        nodesToConnectTo,
-      ),
+      mapCat(nextNodesToConnectTo(send, infoHash, d))(nodesToConnectTo),
     );
   }
-  const [bucket, number, alreadyConnected] = mapGetArrayImmutable(
-    lookups,
-    infoHash,
-  );
+  const [bucket, number, alreadyConnected] = arrayMapGet(lookups, infoHash);
   const isConnectedDirectly = bucketHas(peers, infoHash) ||
     setHasArrayImmutable(alreadyConnected, infoHash);
   return [
@@ -150,14 +145,10 @@ const response = (
   data: any,
 ): any => {
   if (command === "bootstrap") {
-    return setPeer(instance, source_id, data[0], data[1], data[2])
-      ? (EFFECT_commitState(
-        instance.cacheHistorySize,
-        instance.stateCache,
-        instance.latestState,
-      ),
-        getState(instance, null))
-      : null;
+    const result = setPeer(instance, source_id, data[0], data[1], data[2]);
+    return (result)
+      ? [commitState(result), getState(instance, null)]
+      : [instance, null];
   }
   if (command === "get") return instance.data.get(data) || null;
   if (command === "put") {
@@ -185,7 +176,7 @@ Deno.test("es-dht", () => {
     source: PeerId,
     command: Command,
     data: any[],
-  ) => response(mapGetArrayImmutable(idToPeer, target), source, command, data);
+  ) => response(arrayMapGet(idToPeer, target), source, command, data);
   const bootsrapPeer = crypto.randomBytes(20);
   idToPeer.set(bootsrapPeer, makeSimpleDHT(bootsrapPeer));
   const nodes = range(100).map(() => {
@@ -201,7 +192,7 @@ Deno.test("es-dht", () => {
     return id;
   });
   const [alice, bob, carol] = range(3).map(() =>
-    mapGetArrayImmutable(idToPeer, randomElement(nodes))
+    arrayMapGet(idToPeer, randomElement(nodes))
   );
   const data = crypto.randomBytes(10);
   const infohash = put(send)(alice, data);

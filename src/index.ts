@@ -3,17 +3,15 @@ import * as crypto from "https://deno.land/std@0.177.0/node/crypto.ts";
 import {
   ArrayMap,
   ArraySet,
+  arrayMapGet,
   entries,
   keys,
   makeMap,
   makeSet,
-  mapGetArrayImmutable,
   mapHasArrayImmutable,
   mapRemoveArrayImmutable,
   mapSetArrayImmutable,
   mapSizeArrayImmutable,
-  setAddArrayImmutable,
-  setHasArrayImmutable,
   values,
 } from "./containers.ts";
 import {
@@ -101,10 +99,10 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
       ]),
     }, [[
       target,
-      mapGetArrayImmutable<PeerId>(parents, target),
-      mapGetArrayImmutable<StateValue>(
+      arrayMapGet<PeerId>(parents, target),
+      arrayMapGet<StateValue>(
         latestState[1],
-        mapGetArrayImmutable<PeerId>(parents, target),
+        arrayMapGet<PeerId>(parents, target),
       )[0],
     ]]];
   }
@@ -119,12 +117,12 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
     let originatedFrom = makeMap<number>([]);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
     const state = latestState[1];
-    const nodesToConnectTo: Item[] = closestSoFar
+    const nodesToConnectTo = closestSoFar
       .map((closestNode: PeerId) => {
         if (mapHasArrayImmutable(parents, closestNode)) {
-          const parentPeer = mapGetArrayImmutable(parents, closestNode);
+          const parentPeer = arrayMapGet(parents, closestNode);
           const count = mapHasArrayImmutable(originatedFrom, parentPeer)
-            ? mapGetArrayImmutable(originatedFrom, parentPeer)
+            ? arrayMapGet(originatedFrom, parentPeer)
             : 0;
           originatedFrom = mapSetArrayImmutable(
             originatedFrom,
@@ -135,14 +133,14 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
             modifiedBucket = bucketRemove(bucket, closestNode);
             return null;
           }
-          const parentPeerState = mapGetArrayImmutable(state, parentPeer);
+          const parentPeerState = arrayMapGet(state, parentPeer);
           if (parentPeerState) {
             return [closestNode, parentPeer, parentPeerState[0]];
           }
           throw "no state for parent id";
         }
         const count = mapHasArrayImmutable(originatedFrom, closestNode)
-          ? mapGetArrayImmutable(originatedFrom, closestNode)
+          ? arrayMapGet(originatedFrom, closestNode)
           : 0;
         originatedFrom = mapSetArrayImmutable(
           originatedFrom,
@@ -153,8 +151,7 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
           modifiedBucket = bucketRemove(bucket, closestNode);
         }
         return null;
-      })
-      .filter((x: Item | null) => x);
+      }).filter((x) => x) as Item[];
     if (nodesToConnectTo.length) {
       return [{
         ...d,
@@ -166,41 +163,6 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
       }, nodesToConnectTo];
     }
   }
-};
-
-export const EFFECT_updateLookup = (
-  peers: Bucket,
-  lookup: LookupValue,
-  id: PeerId,
-  target: HashedValue,
-  nodeId: PeerId,
-  // Corresponding state version for `nodeId`
-  nodeStateVersion: StateVersion,
-  // Peers of `nodeId` at state `nodeStateVersion` or `null` if connection to `nodeId` have failed
-  nodePeers: PeerId[],
-): Item[] => {
-  const [bucket, number, alreadyConnected] = lookup;
-  if (!nodePeers) {
-    bucket.del(nodeId);
-    return [];
-  }
-  lookup[2] = setAddArrayImmutable(alreadyConnected, nodeId);
-  if (bucketHas(peers, target) || bucketHas(bucket, target)) return [];
-  const addedNodes = makeSet(
-    // todo this must be split into two filters...
-    nodePeers.filter((nodePeerId) =>
-      !bucketHas(bucket, nodePeerId) && bucket.set(nodePeerId)
-    ),
-  );
-  if (bucketHas(bucket, target)) return [[target, nodeId, nodeStateVersion]];
-  bucket.del(id);
-  return closest(bucket, target, number).filter((peer: PeerId) =>
-    setHasArrayImmutable(addedNodes, peer)
-  ).map((peer: PeerId) => [
-    peer,
-    nodeId,
-    nodeStateVersion,
-  ]);
 };
 
 const checkProofLength = (
@@ -236,7 +198,6 @@ const checkProofLength = (
 };
 
 // Returns `undefined` if proof is invalid, otherwise the new DHT (possibly unmodified).
-// TODO: check handling of return value in the tests.
 export const setPeer = (
   d: DHT,
   peerId: PeerId,
@@ -314,7 +275,7 @@ const getStateHelper = (
 ): [StateVersion, State] =>
   uint8ArraysEqual(stateVersion, latestState[0])
     ? latestState
-    : [stateVersion, mapGetArrayImmutable(stateCache, stateVersion)];
+    : [stateVersion, arrayMapGet(stateCache, stateVersion)];
 
 // Generate proof about peer in current state version.
 export const getStateProof = (
