@@ -81,23 +81,23 @@ const nextNodesToConnectTo = (infoHash: HashedValue, d: DHT) =>
 const lookup = (send: Send) =>
 (
   d: DHT,
-  infoHash: HashedValue,
+  target: HashedValue,
   nodesToConnectTo: Item[],
 ): [ArrayMap<LookupValue>, PeerId[]] => {
   const { peers, lookups } = d;
   if (nodesToConnectTo.length) {
     return lookup(send)(
       d,
-      infoHash,
-      mapCat(nextNodesToConnectTo(send, infoHash, d))(nodesToConnectTo),
+      target,
+      mapCat(nextNodesToConnectTo(send, target, d))(nodesToConnectTo),
     );
   }
-  const [bucket, number, alreadyConnected] = arrayMapGet(lookups, infoHash);
-  const isConnectedDirectly = bucketHas(peers, infoHash) ||
-    arraySetHas(alreadyConnected, infoHash);
+  const [bucket, alreadyConnected] = arrayMapGet(lookups, target);
+  const isConnectedDirectly = bucketHas(peers, target) ||
+    arraySetHas(alreadyConnected, target);
   return [
-    arrayMapRemove(lookups, infoHash),
-    isConnectedDirectly ? [infoHash] : closest(bucket, infoHash, number),
+    arrayMapRemove(lookups, target),
+    isConnectedDirectly ? [target] : closest(bucket, target, d.bucketSize),
   ];
 };
 

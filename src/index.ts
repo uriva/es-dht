@@ -38,7 +38,7 @@ export type Version = ReturnType<typeof merkleTreeBinary.get_root>;
 export type DHT = ReturnType<typeof makeDHT>;
 export type HashedValue = any;
 
-export type LookupValue = [Bucket, number, ArraySet];
+export type LookupValue = [Bucket, ArraySet];
 
 export const makeDHT = <V>(
   id: PeerId,
@@ -72,12 +72,8 @@ const parenthood = (state: PeerToPeerState) => {
   return makeArrayMap<PeerId>(parents);
 };
 
-const getBucket = (
-  bucketSize: number,
-  state: PeerToPeerState,
-  target: PeerId,
-) => {
-  let bucket = bucketAddAll(kBucket(target, bucketSize), arrayMapKeys(state));
+const kClosestPeers = (k: number, state: PeerToPeerState, target: PeerId) => {
+  let bucket = bucketAddAll(kBucket(target, k), arrayMapKeys(state));
   arrayMapValues(state).forEach(([, peerPeers]) => {
     bucket = bucketAddAll(bucket, peerPeers);
   });
@@ -87,16 +83,14 @@ const getBucket = (
 export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
   const { id, lookups, bucketSize, peers, state } = d;
   if (bucketHas(peers, target)) return [d, []];
-  const bucket = getBucket(bucketSize, state, target);
-  const alreadyConnected = makeArraySet(arrayMapKeys(state));
+  let indirectPeers = kClosestPeers(bucketSize, state, target);
   const parents = parenthood(state);
-  if (bucketHas(bucket, target)) {
+  if (bucketHas(indirectPeers, target)) {
     return [{
       ...d,
       lookups: arrayMapSet(lookups, target, [
-        bucket,
-        bucketSize,
-        alreadyConnected,
+        indirectPeers,
+        makeArraySet(arrayMapKeys(state)),
       ]),
     }, [[
       target,
@@ -104,14 +98,14 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
       arrayMapGet<PeerState>(state, arrayMapGet<PeerId>(parents, target))[0],
     ]]];
   }
-  let modifiedBucket = bucketRemove(bucket, id);
+  indirectPeers = bucketRemove(indirectPeers, id);
   const maxFraction = Math.max(
     d.fractionOfNodesFromSamePeer,
     // TODO optimize
     1 / bucketElements(peers).length,
   );
   while (true) {
-    const closestSoFar = closest(modifiedBucket, target, bucketSize);
+    const closestSoFar = closest(indirectPeers, target, bucketSize);
     let originatedFrom = makeArrayMap<number>([]);
     const maxCountAllowed = Math.ceil(closestSoFar.length * maxFraction);
     const nodesToConnectTo = closestSoFar
@@ -121,20 +115,13 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
           const count = arrayMapHas(originatedFrom, parentPeer)
             ? arrayMapGet(originatedFrom, parentPeer)
             : 0;
-          originatedFrom = arrayMapSet(
-            originatedFrom,
-            parentPeer,
-            count + 1,
-          );
+          originatedFrom = arrayMapSet(originatedFrom, parentPeer, count + 1);
           if (count > maxCountAllowed) {
-            modifiedBucket = bucketRemove(bucket, closestNode);
+            indirectPeers = bucketRemove(indirectPeers, closestNode);
             return null;
           }
-          const parentPeerState = arrayMapGet(state, parentPeer);
-          if (parentPeerState) {
-            return [closestNode, parentPeer, parentPeerState[0]];
-          }
-          throw "no state for parent id";
+          if (!arrayMapHas(state, parentPeer)) throw "no state for parent id";
+          return [closestNode, parentPeer, arrayMapGet(state, parentPeer)[0]];
         }
         const count = arrayMapHas(originatedFrom, closestNode)
           ? arrayMapGet(originatedFrom, closestNode)
@@ -145,7 +132,7 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
           count + 1,
         );
         if (count > maxCountAllowed) {
-          modifiedBucket = bucketRemove(bucket, closestNode);
+          indirectPeers = bucketRemove(indirectPeers, closestNode);
         }
         return null;
       }).filter((x) => x) as Item[];
@@ -153,9 +140,8 @@ export const startLookup = (d: DHT, target: PeerId): [DHT, Item[]] => {
       return [{
         ...d,
         lookups: arrayMapSet(lookups, target, [
-          modifiedBucket,
-          bucketSize,
-          alreadyConnected,
+          indirectPeers,
+          makeArraySet(arrayMapKeys(state)),
         ]),
       }, nodesToConnectTo];
     }

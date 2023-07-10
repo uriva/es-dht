@@ -1,6 +1,7 @@
 import { bucketAdd, bucketElements, kBucket } from "./kBucket.ts";
 
 import { assertEquals } from "https://deno.land/std@0.193.0/testing/asserts.ts";
+import { randomBytesArray } from "./utils.ts";
 
 const arraySize = 2;
 const k = 20;
